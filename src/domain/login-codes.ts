@@ -476,7 +476,9 @@ const randomKaomojiCode = (): string => {
 
 const randomFallbackCode = (): string => {
   let suffix = '';
-  for (let index = 0; index < 4; index += 1) suffix += pick(FALLBACK_ALPHABET);
+  for (let index = 0; index < 4; index += 1) {
+    suffix += FALLBACK_ALPHABET[randomInt(FALLBACK_ALPHABET.length)];
+  }
   return `${getFallbackPrefix()}-${suffix}`;
 };
 

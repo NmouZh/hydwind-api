@@ -46,7 +46,7 @@ after(() => {
 
 const app = createApp();
 
-const call = (path: string, init: RequestInit = {}): Promise<Response> =>
+const call = async (path: string, init: RequestInit = {}): Promise<Response> =>
   app.request(`${PUBLIC_ORIGIN}${path}`, init);
 
 const postJson = (
@@ -87,7 +87,6 @@ const validInput = {
 
 const seed = async (overrides: Partial<typeof validInput> = {}) => {
   const parsed = validateNewIssue({ ...validInput, ...overrides });
-  assert.equal(parsed.ok, true);
   if (!parsed.ok) throw new Error(parsed.message);
   return createIssue(parsed.value);
 };

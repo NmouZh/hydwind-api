@@ -84,7 +84,7 @@ interface GateCodes {
   ttlMs: number;
 }
 
-const getCodes = (
+const getCodes = async (
   username: string,
   headers: Record<string, string> = {}
 ): Promise<Response> =>
@@ -92,7 +92,7 @@ const getCodes = (
     headers: { cookie: sessionCookie(username), ...headers },
   });
 
-const verifyPlugin = (
+const verifyPlugin = async (
   body: unknown,
   token: string | null = PLUGIN_TOKEN
 ): Promise<Response> =>

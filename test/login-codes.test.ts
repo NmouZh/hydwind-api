@@ -306,7 +306,9 @@ test('同一游戏 ID 在 5 分钟内最多尝试 5 次，429 带 retryAfterMs �
   const blocked = await verifyLoginCode({ code, gameId: 'Alice' }, h.options);
   if (blocked.ok) assert.fail('第 6 次尝试本应被限流');
   assert.equal(blocked.reason, 'rate_limited');
-  assert.ok(blocked.retryAfterMs > 0 && blocked.retryAfterMs <= 60_000);
+  const retryAfterMs = blocked.retryAfterMs;
+  if (retryAfterMs === undefined) assert.fail('限流响应应带 retryAfterMs');
+  assert.ok(retryAfterMs > 0 && retryAfterMs <= 60_000);
   assert.equal(blocked.attemptsRemaining, 0);
 
   // 窗口滑过之后重新允许

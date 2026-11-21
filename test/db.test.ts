@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { closeDb, databasePath, getDb, withTransaction } from '../src/db/database.ts';
 
 const TEMP_PREFIX = path.join(tmpdir(), 'hydwind-db-');

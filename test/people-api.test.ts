@@ -39,7 +39,7 @@ after(() => {
 
 const app = createApp();
 
-const call = (path: string, init: RequestInit = {}): Promise<Response> =>
+const call = async (path: string, init: RequestInit = {}): Promise<Response> =>
   app.request(`${PUBLIC_ORIGIN}${path}`, init);
 
 const postJson = (
