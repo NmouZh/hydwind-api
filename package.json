@@ -1,0 +1,26 @@
+{
+  "name": "hydwind-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hydwind 独立后端：网站 API、启动器清单 API 与 Minecraft 元数据归一化",
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.ts",
+    "start": "node src/server.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
+    "smoke": "node ./scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.11",
+    "hono": "^4.13.19"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3"
+  }
+}

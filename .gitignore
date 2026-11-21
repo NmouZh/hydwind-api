@@ -1,0 +1,10 @@
+node_modules/
+data/
+*.sqlite
+*.sqlite-*
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
