@@ -1,0 +1,80 @@
+[
+  {
+    "id": "CT6qQx01",
+    "project_id": "AANobbMI",
+    "name": "Sodium 0.9.3 for 26.3 (NeoForge)",
+    "version_number": "mc26.3-0.9.3-beta.5-neoforge",
+    "version_type": "beta",
+    "game_versions": ["26.3"],
+    "loaders": ["neoforge"],
+    "featured": true,
+    "status": "listed",
+    "date_published": "2026-11-13T09:00:00Z",
+    "downloads": 120000,
+    "files": [
+      {
+        "hashes": {
+          "sha1": "bf3860fda533ae409116f3303c139cd91cb77fa3",
+          "sha512": "a460d7542dca8ea461d16d2f172bfde93bede9550fc076d4910419b8a62c1dc6c157af73c82775ff7cc895904ba83eeac16089240beec6badeb53cf0fda45f67"
+        },
+        "url": "https://cdn.modrinth.com/data/AANobbMI/versions/CT6qQx01/sodium-neoforge-0.9.3-beta.5%2Bmc26.3.jar",
+        "filename": "sodium-neoforge-0.9.3-beta.5+mc26.3.jar",
+        "primary": true,
+        "size": 1211839
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "id": "FAbRiC0001",
+    "project_id": "AANobbMI",
+    "name": "Sodium 0.9.3 for 26.3 (Fabric)",
+    "version_number": "mc26.3-0.9.3-beta.5-fabric",
+    "version_type": "beta",
+    "game_versions": ["26.3"],
+    "loaders": ["fabric"],
+    "featured": false,
+    "status": "listed",
+    "date_published": "2026-11-12T09:00:00Z",
+    "downloads": 150000,
+    "files": [
+      {
+        "hashes": {
+          "sha1": "6666666666666666666666666666666666666666",
+          "sha512": "77777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777"
+        },
+        "url": "https://cdn.modrinth.com/data/AANobbMI/versions/FAbRiC0001/sodium-fabric-0.9.3-beta.5%2Bmc26.3.jar",
+        "filename": "sodium-fabric-0.9.3-beta.5+mc26.3.jar",
+        "primary": true,
+        "size": 1200000
+      }
+    ],
+    "dependencies": []
+  },
+  {
+    "id": "OLD00001",
+    "project_id": "AANobbMI",
+    "name": "Sodium 0.6.0 for 1.20.1",
+    "version_number": "mc1.20.1-0.6.0",
+    "version_type": "release",
+    "game_versions": ["1.20.1"],
+    "loaders": ["fabric"],
+    "featured": false,
+    "status": "listed",
+    "date_published": "2024-06-01T09:00:00Z",
+    "downloads": 9000000,
+    "files": [
+      {
+        "hashes": {
+          "sha1": "8888888888888888888888888888888888888888",
+          "sha512": "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+        },
+        "url": "https://cdn.modrinth.com/data/AANobbMI/versions/OLD00001/sodium-fabric-0.6.0.jar",
+        "filename": "sodium-fabric-0.6.0.jar",
+        "primary": true,
+        "size": 900000
+      }
+    ],
+    "dependencies": []
+  }
+]

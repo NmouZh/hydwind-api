@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>net.neoforged</groupId>
+  <artifactId>neoforge</artifactId>
+  <versioning>
+    <latest>26.3.0.115</latest>
+    <release>26.3.0.115</release>
+    <versions>
+      <version>21.5.75</version>
+      <version>26.2.0.9</version>
+      <version>26.3.0.100</version>
+      <version>26.3.0.114</version>
+      <version>26.3.0.115</version>
+      <version>26.3.0.116-beta.1</version>
+    </versions>
+  </versioning>
+</metadata>

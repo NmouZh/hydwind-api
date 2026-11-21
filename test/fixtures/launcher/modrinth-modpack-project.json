@@ -1,0 +1,18 @@
+{
+  "id": "1KVo5zza",
+  "slug": "fabulously-optimized",
+  "title": "Fabulously Optimized",
+  "description": "A simple Minecraft modpack focusing on performance and graphics enhancements.",
+  "project_type": "modpack",
+  "game_versions": ["26.3"],
+  "loaders": ["fabric"],
+  "categories": ["fabric", "optimization"],
+  "client_side": "required",
+  "server_side": "required",
+  "downloads": 25000000,
+  "followers": 43000,
+  "license": "MIT",
+  "versions": ["uEkz53eA"],
+  "published": "2020-10-10T00:00:00Z",
+  "updated": "2026-11-20T09:00:00Z"
+}

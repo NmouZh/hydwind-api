@@ -1,0 +1,123 @@
+{
+  "id": "26.3",
+  "type": "release",
+  "mainClass": "net.minecraft.client.main.Main",
+  "assets": "34",
+  "javaVersion": { "component": "java-runtime-epsilon", "majorVersion": 25 },
+  "releaseTime": "2026-09-15T11:23:02+00:00",
+  "time": "2026-09-15T11:25:00+00:00",
+  "downloads": {
+    "client": {
+      "sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+      "size": 41483720,
+      "url": "https://piston-data.mojang.com/v1/objects/e877b6a07acd633fb3bb475002175cec036e7b87/client.jar"
+    }
+  },
+  "assetIndex": {
+    "id": "34",
+    "sha1": "f3df28b441565ca4e5deb9cda856d90df62e1433",
+    "size": 597235,
+    "totalSize": 487810291,
+    "url": "https://piston-meta.mojang.com/v1/packages/f3df28b441565ca4e5deb9cda856d90df62e1433/34.json"
+  },
+  "arguments": {
+    "default-user-jvm": [
+      { "value": ["-Xms2G", "-Xmx4G", "-XX:+UseCompactObjectHeaders"] },
+      { "rules": [{ "action": "allow", "os": { "name": "osx" } }], "value": ["-XX:+UseZGC"] }
+    ],
+    "game": [
+      "--username",
+      "${auth_player_name}",
+      "--version",
+      "${version_name}",
+      { "rules": [{ "action": "allow", "os": { "name": "osx" } }], "value": ["--mac"] },
+      {
+        "rules": [{ "action": "allow", "features": { "is_demo_user": true } }],
+        "value": ["--demo"]
+      }
+    ],
+    "jvm": [
+      "-Djava.library.path=${natives_directory}",
+      "-Dminecraft.launcher.brand=${launcher_name}",
+      { "rules": [{ "action": "allow", "os": { "name": "windows" } }], "value": "-Dos.name=Windows" }
+    ]
+  },
+  "libraries": [
+    {
+      "name": "com.example:common:1.0",
+      "downloads": {
+        "artifact": {
+          "path": "com/example/common/1.0/common-1.0.jar",
+          "url": "https://libraries.minecraft.net/com/example/common/1.0/common-1.0.jar",
+          "sha1": "cccccccccccccccccccccccccccccccccccccccc",
+          "size": 1234
+        }
+      }
+    },
+    {
+      "name": "com.example:mac-only:1.0",
+      "rules": [{ "action": "allow", "os": { "name": "osx" } }],
+      "downloads": {
+        "artifact": {
+          "path": "com/example/mac-only/1.0/mac-only-1.0.jar",
+          "url": "https://libraries.minecraft.net/com/example/mac-only/1.0/mac-only-1.0.jar",
+          "sha1": "dddddddddddddddddddddddddddddddddddddddd",
+          "size": 2345
+        }
+      }
+    },
+    {
+      "name": "com.example:win32:1.0",
+      "rules": [{ "action": "allow", "os": { "name": "windows", "arch": "x86" } }],
+      "downloads": {
+        "artifact": {
+          "path": "com/example/win32/1.0/win32-1.0.jar",
+          "url": "https://libraries.minecraft.net/com/example/win32/1.0/win32-1.0.jar",
+          "sha1": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "size": 3456
+        }
+      }
+    },
+    {
+      "name": "com.example:arm64:1.0",
+      "rules": [{ "action": "allow", "os": { "arch": "arm64" } }],
+      "downloads": {
+        "artifact": {
+          "path": "com/example/arm64/1.0/arm64-1.0.jar",
+          "url": "https://libraries.minecraft.net/com/example/arm64/1.0/arm64-1.0.jar",
+          "sha1": "ffffffffffffffffffffffffffffffffffffffff",
+          "size": 4567
+        }
+      }
+    },
+    {
+      "name": "com.example:feature:1.0",
+      "rules": [
+        { "action": "allow", "features": { "has_custom_resolution": true } }
+      ],
+      "downloads": {
+        "artifact": {
+          "path": "com/example/feature/1.0/feature-1.0.jar",
+          "url": "https://libraries.minecraft.net/com/example/feature/1.0/feature-1.0.jar",
+          "sha1": "1111111111111111111111111111111111111111",
+          "size": 5678
+        }
+      }
+    },
+    {
+      "name": "com.example:not-linux:1.0",
+      "rules": [
+        { "action": "allow" },
+        { "action": "disallow", "os": { "name": "linux" } }
+      ],
+      "downloads": {
+        "artifact": {
+          "path": "com/example/not-linux/1.0/not-linux-1.0.jar",
+          "url": "https://libraries.minecraft.net/com/example/not-linux/1.0/not-linux-1.0.jar",
+          "sha1": "2222222222222222222222222222222222222222",
+          "size": 6789
+        }
+      }
+    }
+  ]
+}

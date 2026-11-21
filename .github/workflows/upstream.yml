@@ -1,0 +1,32 @@
+name: Upstream
+
+# 启动器上游连通性检查：真实网络拉取 Mojang / Fabric / Forge / NeoForge
+# 的代表性 manifest。CI（ci.yml）全部注入 fetch 不出站，这里补上真实
+# 出站路径的回归：上游改格式或镜像失效时最先在这里报警。
+on:
+  workflow_dispatch:
+  schedule:
+    # 每周一 03:17 UTC，避开整点拥挤。
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: launcher live manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch live launcher manifests
+        run: node scripts/launcher-live.mjs

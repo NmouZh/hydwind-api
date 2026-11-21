@@ -1,0 +1,37 @@
+{
+  "_comment": ["fixture: Forge 26.3 installer install_profile.json"],
+  "spec": 1,
+  "profile": "forge",
+  "version": "26.3-forge-66.1.9",
+  "path": "net.minecraftforge:forge:26.3-66.1.9:shim",
+  "minecraft": "26.3",
+  "json": "/version.json",
+  "hideExtract": true,
+  "libraries": [
+    {
+      "name": "com.google.code.gson:gson:2.10.1",
+      "downloads": {
+        "artifact": {
+          "path": "com/google/code/gson/gson/2.10.1/gson-2.10.1.jar",
+          "url": "https://libraries.minecraft.net/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar",
+          "sha1": "b3add478d4382b78ea20b1671390a858002feb6c",
+          "size": 283367
+        }
+      }
+    }
+  ],
+  "processors": [
+    {
+      "sides": ["server"],
+      "jar": "net.minecraftforge:installertools:1.4.6",
+      "classpath": ["net.minecraftforge:installertools:1.4.6"],
+      "args": ["--task", "EXTRACT_FILES", "--archive", "{INSTALLER}"]
+    }
+  ],
+  "data": {
+    "PATCHED": {
+      "client": "[net.minecraftforge:forge:26.3-66.1.9:client]",
+      "server": "'server.jar'"
+    }
+  }
+}

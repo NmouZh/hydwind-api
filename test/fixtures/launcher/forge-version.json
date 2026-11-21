@@ -1,0 +1,36 @@
+{
+  "id": "26.3-forge-66.1.9",
+  "time": "2026-11-18T21:10:31Z",
+  "releaseTime": "2026-11-18T21:10:31Z",
+  "type": "release",
+  "inheritsFrom": "26.3",
+  "mainClass": "net.minecraftforge.bootstrap.ForgeBootstrap",
+  "arguments": {
+    "game": ["--launchTarget", "forge_client"],
+    "jvm": ["-Djava.net.preferIPv6Addresses=system", "-XX:+UseCompactObjectHeaders"]
+  },
+  "libraries": [
+    {
+      "name": "net.minecraftforge:forge:26.3-66.1.9:universal",
+      "downloads": {
+        "artifact": {
+          "path": "net/minecraftforge/forge/26.3-66.1.9/forge-26.3-66.1.9-universal.jar",
+          "url": "https://maven.minecraftforge.net/net/minecraftforge/forge/26.3-66.1.9/forge-26.3-66.1.9-universal.jar",
+          "sha1": "8e7e11f855c793f17faf18f3d14cc4071793715b",
+          "size": 2789843
+        }
+      }
+    },
+    {
+      "name": "net.minecraftforge:forge:26.3-66.1.9:client",
+      "downloads": {
+        "artifact": {
+          "path": "net/minecraftforge/forge/26.3-66.1.9/forge-26.3-66.1.9-client.jar",
+          "url": "",
+          "sha1": "5204a74b2c71ae37aa872bffe09ce73971747d23",
+          "size": 82958210
+        }
+      }
+    }
+  ]
+}

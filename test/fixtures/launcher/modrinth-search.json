@@ -1,0 +1,27 @@
+{
+  "hits": [
+    {
+      "project_id": "AANobbMI",
+      "project_type": "mod",
+      "slug": "sodium",
+      "title": "Sodium",
+      "description": "A high-performance rendering engine replacement for Minecraft.",
+      "categories": ["fabric", "neoforge", "optimization", "quilt"],
+      "display_categories": ["fabric", "neoforge", "optimization", "quilt"],
+      "versions": ["26.3"],
+      "downloads": 98234112,
+      "follows": 12873,
+      "icon_url": "https://cdn.modrinth.com/data/AANobbMI/icon.png",
+      "date_created": "2020-12-06T13:34:22Z",
+      "date_modified": "2026-11-13T09:00:00Z",
+      "latest_version": "CT6qQx01",
+      "license": "LGPL-3.0-only",
+      "client_side": "required",
+      "server_side": "unsupported",
+      "gallery": []
+    }
+  ],
+  "offset": 0,
+  "limit": 20,
+  "total_hits": 1
+}

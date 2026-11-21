@@ -23,6 +23,7 @@ import {
   saveBiography,
 } from './routes/people.ts';
 import { pluginLoginVerify } from './routes/plugin.ts';
+import { createLauncherRoutes } from './routes/launcher.ts';
 import { getStatus } from './routes/status.ts';
 
 /**
@@ -34,6 +35,10 @@ import { getStatus } from './routes/status.ts';
  */
 export const createApp = (): Hono => {
   const app = new Hono();
+
+  // 启动器路由先于全局 bodyLimit 注册：normalize 需要 2MiB，自己带 bodyLimit；
+  // 既有路由仍走下面的 1MiB 上限（Hono 按注册顺序短路，不会串用）。
+  app.route('/api/launcher', createLauncherRoutes());
 
   app.use(
     bodyLimit({

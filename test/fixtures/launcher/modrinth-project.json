@@ -1,0 +1,18 @@
+{
+  "id": "AANobbMI",
+  "slug": "sodium",
+  "title": "Sodium",
+  "description": "A high-performance rendering engine replacement for Minecraft.",
+  "project_type": "mod",
+  "game_versions": ["1.16.3", "1.20.1", "1.21.5", "26.3"],
+  "loaders": ["fabric", "neoforge", "quilt"],
+  "categories": ["fabric", "neoforge", "optimization", "quilt"],
+  "client_side": "required",
+  "server_side": "unsupported",
+  "downloads": 98234112,
+  "followers": 12873,
+  "license": "LGPL-3.0-only",
+  "versions": ["CT6qQx01", "FAbRiC0001"],
+  "published": "2020-12-06T13:34:22Z",
+  "updated": "2026-11-13T09:00:00Z"
+}
