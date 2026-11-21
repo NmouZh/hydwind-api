@@ -169,14 +169,17 @@ const matchesCidr = (address: ParsedAddress, cidr: ParsedCidr): boolean => {
  *
  * 只在直连对端命中 TRUSTED_PROXY_CIDRS 时才采信 X-Forwarded-For 的第一个
  * 非空值；否则 XFF 由外网客户端随意伪造，一律忽略。非法 CIDR 忽略。
+ *
+ * 合成请求（如 `app.request()`）拿不到 socket，此时把保底回环当作对端，
+ * 与真实请求走同一套信任判断：回环默认在受信代理列表里，所以带 XFF 时
+ * 采信；不带 XFF 时仍返回回环。真实服务器的请求总能拿到 socket，不受影响。
  */
 export const resolveClientAddress = (
   remoteAddress: string | undefined,
   forwardedFor: string | null,
   trustedCidrs: string[] = DEFAULT_TRUSTED_PROXY_CIDRS
 ): string => {
-  const remote = remoteAddress?.trim() ?? '';
-  if (!remote) return FALLBACK_CLIENT_ADDRESS;
+  const remote = remoteAddress?.trim() || FALLBACK_CLIENT_ADDRESS;
 
   const address = parseAddress(remote);
   if (!address) return remote;

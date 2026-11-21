@@ -315,25 +315,25 @@ test('PUT：跨站 Origin 返回 403；同源与无 Origin 放行', async () => 
   await createAccount('BioOriginUser');
   const cookie = sessionCookie('BioOriginUser');
 
-  const crossed = await call('PUT', 'bioriginuser', {
+  const crossed = await call('PUT', 'biooriginuser', {
     cookie,
     origin: 'https://evil.example',
     body: { mainTitle: '跨站写入', body: '不应成功' },
   });
   assert.equal(crossed.status, 403);
 
-  const afterCrossed = await call('GET', 'bioriginuser');
+  const afterCrossed = await call('GET', 'biooriginuser');
   assert.equal(afterCrossed.body.updatedAt, null);
   assert.equal(afterCrossed.body.body, '');
 
-  const sameOrigin = await call('PUT', 'bioriginuser', {
+  const sameOrigin = await call('PUT', 'biooriginuser', {
     cookie,
     origin: PUBLIC_ORIGIN,
     body: { mainTitle: '同源写入', body: '可以成功' },
   });
   assert.equal(sameOrigin.status, 200);
 
-  const noOrigin = await call('PUT', 'bioriginuser', {
+  const noOrigin = await call('PUT', 'biooriginuser', {
     cookie,
     body: { mainTitle: '无 Origin 写入', body: '服务端调用' },
   });

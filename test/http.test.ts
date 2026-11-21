@@ -287,9 +287,12 @@ test('resolveClientAddress：IPv6 CIDR 与 /0 边界', () => {
   assert.equal(resolveClientAddress('8.8.8.8', '203.0.113.11', ['0.0.0.0/0']), '203.0.113.11');
 });
 
-test('resolveClientAddress：无远端、空 XFF 与不可解析远端的保底', () => {
-  assert.equal(resolveClientAddress(undefined, '203.0.113.11'), '127.0.0.1');
-  assert.equal(resolveClientAddress('  ', '203.0.113.11'), '127.0.0.1');
+test('resolveClientAddress：无 socket 按回环保底并走信任链', () => {
+  // 合成请求拿不到对端地址时以回环代替；回环默认受信，所以带 XFF 时采信。
+  assert.equal(resolveClientAddress(undefined, '203.0.113.11'), '203.0.113.11');
+  assert.equal(resolveClientAddress('  ', '203.0.113.11'), '203.0.113.11');
+  assert.equal(resolveClientAddress(undefined, '203.0.113.11', []), '127.0.0.1');
+  assert.equal(resolveClientAddress(undefined, null), '127.0.0.1');
   assert.equal(resolveClientAddress('127.0.0.1', null), '127.0.0.1');
   assert.equal(resolveClientAddress('127.0.0.1', '   ', ['127.0.0.1/32']), '127.0.0.1');
   assert.equal(resolveClientAddress('not-an-ip', '203.0.113.11'), 'not-an-ip');
