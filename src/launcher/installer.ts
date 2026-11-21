@@ -6,11 +6,11 @@ import type {
   ArchName,
   JsonRecord,
   LoaderRef,
-  Mirror,
   OsName,
   Platform,
 } from './manifest.ts';
 import { asNumber, asRecord, asString, isValidVersionId } from './manifest.ts';
+import type { Mirror } from './mirror.ts';
 import { rewriteUrlForMirror } from './mirror.ts';
 import { fetchVersionJson } from './versions.ts';
 import { readZipEntries, readZipJson, ZipError } from './zip.ts';

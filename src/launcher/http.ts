@@ -1,6 +1,6 @@
 import type { CacheStore } from './cache.ts';
 import { NotFoundError, UpstreamError } from './errors.ts';
-import type { Mirror } from './manifest.ts';
+import type { Mirror } from './mirror.ts';
 
 /**
  * 出站 HTTP 的唯一入口。

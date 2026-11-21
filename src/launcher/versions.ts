@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { NotFoundError, ManifestError, UpstreamError } from './errors.ts';
 import type { LauncherDeps } from './http.ts';
 import { fetchJson, fetchText } from './http.ts';
-import type { JsonRecord, Mirror } from './manifest.ts';
+import type { JsonRecord } from './manifest.ts';
 import {
   asArray,
   asRecord,
@@ -10,6 +10,7 @@ import {
   isValidVersionId,
   mergeVersionJson,
 } from './manifest.ts';
+import type { Mirror } from './mirror.ts';
 import { rewriteUrlForMirror } from './mirror.ts';
 
 /**

@@ -16,7 +16,8 @@ import {
 import type { LauncherDeps } from '../launcher/http.ts';
 import { buildInstallerManifest } from '../launcher/installer.ts';
 import { buildLoaderVersions } from '../launcher/loaders.ts';
-import type { LoaderType, Mirror, Platform } from '../launcher/manifest.ts';
+import type { LoaderType, Platform } from '../launcher/manifest.ts';
+import type { Mirror } from '../launcher/mirror.ts';
 import {
   isValidVersionId,
   normalizeArch,

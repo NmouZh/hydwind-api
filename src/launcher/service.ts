@@ -6,13 +6,14 @@ import {
   isSafeLoaderVersion,
   quiltProfileUrl,
 } from './loaders.ts';
-import type { JsonRecord, Mirror, NormalizedManifest, Platform } from './manifest.ts';
+import type { JsonRecord, NormalizedManifest, Platform } from './manifest.ts';
 import {
   asString,
   isValidVersionId,
   mergeVersionJson,
   normalizeVersionJson,
 } from './manifest.ts';
+import type { Mirror } from './mirror.ts';
 import { rewriteUrlForMirror } from './mirror.ts';
 import {
   fetchVersionJson,

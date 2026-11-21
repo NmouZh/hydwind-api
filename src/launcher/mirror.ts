@@ -1,4 +1,5 @@
-import type { Mirror } from './manifest.ts';
+/** 镜像来源：官方直连或 BMCLAPI。 */
+export type Mirror = 'official' | 'bmclapi';
 
 /**
  * BMCLAPI 镜像重写。
