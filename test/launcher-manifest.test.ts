@@ -104,7 +104,9 @@ test('Maven 坐标生成安全路径，非法坐标返回 null', () => {
     parseMavenCoordinate('net.minecraftforge:forge:26.3-66.1.9:universal')?.path,
     'net/minecraftforge/forge/26.3-66.1.9/forge-26.3-66.1.9-universal.jar'
   );
-  assert.equal(parseMavenCoordinate('org.ow2.asm:asm@zip')?.path, 'org/ow2/asm/asm/asm.jar');
+  assert.equal(parseMavenCoordinate('org.ow2.asm:asm:9.10.1@zip')?.path, 'org/ow2/asm/asm/9.10.1/asm-9.10.1.zip');
+  // 少于三段（group:artifact@ext）不是合法坐标。
+  assert.equal(parseMavenCoordinate('org.ow2.asm:asm@zip'), null);
   assert.equal(parseMavenCoordinate('../../evil:artifact:1'), null);
   assert.equal(parseMavenCoordinate('group:artifact:1:classifier:extra'), null);
 });

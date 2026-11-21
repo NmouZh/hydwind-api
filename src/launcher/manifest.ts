@@ -118,9 +118,11 @@ export const parseMavenCoordinate = (name: string): MavenCoordinate | null => {
   const parts = coordinate.split(':');
   if (parts.length < 3 || parts.length > 4) return null;
   const [group, artifact, version, classifier = ''] = parts;
-  if (![group, artifact, version, classifier].every((part) => SAFE_SEGMENT.test(part))) {
+  if (![group, artifact, version].every((part) => SAFE_SEGMENT.test(part))) {
     return null;
   }
+  // classifier 可空（三段坐标）；非空时才检查字符集。
+  if (classifier && !SAFE_SEGMENT.test(classifier)) return null;
 
   const fileName = `${artifact}-${version}${classifier ? `-${classifier}` : ''}.${ext}`;
   const path = `${group.replace(/\./g, '/')}/${artifact}/${version}/${fileName}`;

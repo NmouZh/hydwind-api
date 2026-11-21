@@ -76,5 +76,9 @@ export const rewriteUrlForMirror = (value: string, mirror: Mirror): string => {
 
 export const MOJANG_ASSET_BASE_URL = 'https://resources.download.minecraft.net';
 
-export const assetBaseUrlForMirror = (mirror: Mirror): string =>
-  rewriteUrlForMirror(MOJANG_ASSET_BASE_URL, mirror);
+export const assetBaseUrlForMirror = (mirror: Mirror): string => {
+  const rewritten = rewriteUrlForMirror(MOJANG_ASSET_BASE_URL, mirror);
+  // URL() 会把裸 host 的 pathname 归一成 '/'，重写后多出尾斜杠；
+  // 与官方常量保持同形，启动器直接拼 hash 即可。
+  return mirror === 'bmclapi' ? rewritten.replace(/\/+$/, '') : rewritten;
+};
