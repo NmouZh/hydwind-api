@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -20,6 +28,7 @@ import {
   sha256Hex,
   validateOverridesZip,
 } from '../src/launcher/client-pack.ts';
+import { createClientPackStore } from '../src/launcher/pack-store.ts';
 import { readZipEntries } from '../src/launcher/zip.ts';
 import { createLauncherRoutes } from '../src/routes/launcher.ts';
 import type { LauncherRouteOptions } from '../src/routes/launcher.ts';
@@ -192,6 +201,72 @@ const buildZip = (entries: Record<string, string | Buffer>): Buffer => {
   return Buffer.concat([...localParts, central, eocd]);
 };
 
+interface RawZipEntry {
+  name: string;
+  data?: Buffer | string;
+  /** 故意让本地头与中央目录不一致时使用。 */
+  localName?: string;
+  /** Unix mode 在外部属性高 16 位；DOS 目录位在低字节。 */
+  externalAttrs?: number;
+  store?: boolean;
+}
+
+const buildRawZip = (entries: RawZipEntry[]): Buffer => {
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const data =
+      entry.data === undefined
+        ? Buffer.alloc(0)
+        : Buffer.isBuffer(entry.data)
+          ? entry.data
+          : Buffer.from(entry.data, 'utf8');
+    const method = entry.store ? 0 : 8;
+    const payload = method === 0 ? data : deflateRawSync(data);
+    const nameBuffer = Buffer.from(entry.name, 'utf8');
+    const localNameBuffer = Buffer.from(entry.localName ?? entry.name, 'utf8');
+    const checksum = crc32(data);
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(localNameBuffer.length, 26);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBuffer.length, 28);
+    central.writeUInt32LE((entry.externalAttrs ?? 0) >>> 0, 38);
+    central.writeUInt32LE(offset, 42);
+
+    localParts.push(local, localNameBuffer, payload);
+    centralParts.push(central, nameBuffer);
+    offset += 30 + localNameBuffer.length + payload.length;
+  }
+
+  const central = Buffer.concat(centralParts);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(central.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, central, eocd]);
+};
+
 interface BuiltOverrides {
   zip: Buffer;
   overrides: TestOverrides;
@@ -217,7 +292,7 @@ const buildOverrides = (files: FixtureFile[]): BuiltOverrides => {
     overrides: {
       sha256: sha256Hex(zip),
       size: zip.length,
-      files: manifest.sort((left, right) => left.path.localeCompare(right.path)),
+      files: manifest.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0)),
     },
   };
 };
@@ -228,7 +303,7 @@ interface PublishOptions {
   token?: string | null;
 }
 
-const publishPack = (
+const publishPack = async (
   app: Hono,
   pack: unknown,
   options: PublishOptions = {}
@@ -294,13 +369,16 @@ test('发布成功：完整包、公开读取、ETag 与 If-None-Match', async (
   assert.equal(read.headers.get('content-type'), 'application/json; charset=utf-8');
   assert.equal(read.headers.get('cache-control'), 'no-cache');
   assert.equal(read.headers.get('etag'), etag);
-  assert.deepEqual(await read.json(), pack);
+  const readBytes = Buffer.from(await read.arrayBuffer());
+  assert.deepEqual(readBytes, rawBytes);
+  assert.deepEqual(JSON.parse(readBytes.toString('utf8')), pack);
 
   for (const header of [
     etag,
     `"other", ${etag}`,
     `W/${etag}`,
     `  ${etag} , "other"`,
+    '*',
   ]) {
     const notModified = await app.request(CLIENT_PATH, {
       headers: { 'if-none-match': header },
@@ -437,6 +515,42 @@ test('发布校验失败返回 400 且 current 不变', async (t) => {
   addMutated('duplicate filename', (pack) => {
     pack.mods[1]!.filename = pack.mods[0]!.filename;
   });
+  addMutated(
+    'filename only differs by case: foo.jar vs FOO.jar',
+    (pack) => {
+      pack.mods[0]!.filename = 'foo.jar';
+      pack.mods[1]!.filename = 'FOO.jar';
+    },
+    /模组文件名.*大小写.*FOO\.jar/
+  );
+  addMutated(
+    'filename trailing dot',
+    (pack) => {
+      pack.mods[0]!.filename = 'foo.';
+    },
+    /mods\[0\]\.filename.*点或空格结尾/
+  );
+  addMutated(
+    'filename trailing space',
+    (pack) => {
+      pack.mods[0]!.filename = 'foo ';
+    },
+    /mods\[0\]\.filename.*点或空格结尾/
+  );
+  addMutated(
+    'filename contains colon',
+    (pack) => {
+      pack.mods[0]!.filename = 'a:b.jar';
+    },
+    /mods\[0\]\.filename.*冒号/
+  );
+  addMutated(
+    'filename is Windows reserved device',
+    (pack) => {
+      pack.mods[0]!.filename = 'CON.jar';
+    },
+    /mods\[0\]\.filename.*保留设备名/
+  );
   addMutated('more than 200 mods', (pack) => {
     pack.mods = Array.from({ length: 201 }, (_, index) => ({
       ...pack.mods[0]!,
@@ -451,6 +565,41 @@ test('发布校验失败返回 400 且 current 不变', async (t) => {
   addMutated('java.major', (pack) => {
     pack.java.major = 25.5;
   });
+  addMutated(
+    'missing mods',
+    (pack) => {
+      delete (pack as Partial<TestPack>).mods;
+    },
+    /mods 必须是数组/
+  );
+  addMutated(
+    'mods object instead of array',
+    (pack) => {
+      pack.mods = {} as TestMod[];
+    },
+    /mods 必须是数组/
+  );
+  addMutated(
+    'minLauncherVersion trailing hyphen',
+    (pack) => {
+      pack.minLauncherVersion = '1.2.3-';
+    },
+    /minLauncherVersion 必须是严格 SemVer/
+  );
+  addMutated(
+    'minLauncherVersion empty prerelease identifier',
+    (pack) => {
+      pack.minLauncherVersion = '1.2.3-..';
+    },
+    /minLauncherVersion 必须是严格 SemVer/
+  );
+  addMutated(
+    'minLauncherVersion leading zero',
+    (pack) => {
+      pack.minLauncherVersion = '01.2.3';
+    },
+    /minLauncherVersion 必须是严格 SemVer/
+  );
 
   for (const [label, badPath] of [
     ['overrides ../ path', '../evil.toml'],
@@ -462,6 +611,45 @@ test('发布校验失败返回 400 且 current 不变', async (t) => {
     pack.overrides!.files[0]!.path = badPath;
     cases.push({ label, pack });
   }
+
+  const addBadOverridePath = (label: string, badPath: string, message: RegExp): void => {
+    const pack = withOverrides();
+    pack.overrides!.files[0]!.path = badPath;
+    cases.push({ label, pack, message });
+  };
+  addBadOverridePath(
+    'overrides trailing dot segment',
+    'config/foo./bar.toml',
+    /overrides\.files\[0\]\.path.*点或空格结尾/
+  );
+  addBadOverridePath(
+    'overrides trailing space segment',
+    'config/foo /bar.toml',
+    /overrides\.files\[0\]\.path.*点或空格结尾/
+  );
+  addBadOverridePath(
+    'overrides trailing space at end',
+    'config/foo.toml ',
+    /overrides\.files\[0\]\.path.*点或空格结尾/
+  );
+  addBadOverridePath(
+    'overrides colon path',
+    'config/a:b.toml',
+    /overrides\.files\[0\]\.path.*冒号/
+  );
+  addBadOverridePath(
+    'overrides reserved device path',
+    'CON/config.toml',
+    /overrides\.files\[0\]\.path.*保留设备名/
+  );
+
+  const caseDuplicatePack = withOverrides();
+  caseDuplicatePack.overrides!.files[1]!.path = 'config/FOO.TOML';
+  cases.push({
+    label: 'overrides path only differs by case: foo.toml vs FOO.TOML',
+    pack: caseDuplicatePack,
+    message: /overrides\.files\[1\]\.path.*大小写.*FOO\.TOML/,
+  });
 
   cases.push({ label: 'no zip with overrides', pack: withOverrides() });
   cases.push({ label: 'zip without overrides manifest', pack: baseDraft(), overrides: built.zip });
@@ -545,6 +733,27 @@ test('发布校验失败返回 400 且 current 不变', async (t) => {
   assert.equal((await jsonAs<TestPack>(after)).packVersion, 1);
 });
 
+test('Windows 边界内的文件名与路径可以发布', async (t) => {
+  const dir = makeDir(t);
+  const app = makeApp(dir);
+
+  const built = buildOverrides(overrideFixtureFiles());
+  const pack = baseDraft();
+  pack.mods[0]!.filename = 'console.jar';
+  pack.mods[1]!.filename = 'COM10.jar';
+  pack.overrides = structuredClone(built.overrides);
+
+  const response = await publishPack(app, pack, { overrides: built.zip });
+  assert.equal(response.status, 200);
+  const stored = await jsonAs<TestPack>(response);
+  assert.equal(stored.mods[0]!.filename, 'console.jar');
+  assert.equal(stored.mods[1]!.filename, 'COM10.jar');
+  assert.deepEqual(
+    stored.overrides!.files.map((file) => file.path),
+    ['config/foo.toml', 'config/mod/config.json']
+  );
+});
+
 test('请求体超过注入上限返回 413 且不发布', async (t) => {
   const dir = makeDir(t);
   const app = makeApp(dir, { maxClientPackBodyBytes: 512 });
@@ -595,7 +804,7 @@ test('overrides 发布与下载：字节一致、immutable、非法版本 404', 
     built.zip
   );
 
-  const download = await app.request(pack.overrides!.url);
+  const download = await app.request(pack.overrides!.url!);
   assert.equal(download.status, 200);
   assert.equal(download.headers.get('content-type'), 'application/zip');
   assert.equal(
@@ -640,8 +849,8 @@ test('packVersion 递增、并发发布串行化、保留最近 5 版', async (t
   assert.equal(left.status, 200);
   assert.equal(right.status, 200);
   const concurrentVersions = [
-    (await jsonAs<TestPack>(left)).packVersion,
-    (await jsonAs<TestPack>(right)).packVersion,
+    (await jsonAs<TestPack>(left)).packVersion!,
+    (await jsonAs<TestPack>(right)).packVersion!,
   ].sort((a, b) => a - b);
   assert.deepEqual(concurrentVersions, [3, 4]);
 
@@ -684,9 +893,38 @@ test('新路由实例读取同一目录（持久化）', async (t) => {
   assert.equal(pack.packVersion, 1);
   assert.deepEqual(pack, publishedPack);
 
-  const download = await second.request(pack.overrides!.url);
+  const download = await second.request(pack.overrides!.url!);
   assert.equal(download.status, 200);
   assert.deepEqual(Buffer.from(await download.arrayBuffer()), built.zip);
+});
+
+test('current.json 内容损坏时发布会续号，文件系统错误仍然抛出', async (t) => {
+  const dir = makeDir(t);
+  const logs: string[] = [];
+  const store = createClientPackStore({
+    dir,
+    logger: (message) => logs.push(message),
+  });
+  const draft = parseClientPackDraft(baseDraft());
+
+  const first = await store.publish({ draft, overrides: null });
+  assert.equal(first.packVersion, 1);
+
+  const currentPath = path.join(dir, 'current.json');
+  writeFileSync(currentPath, '{"packVersion":');
+  const second = await store.publish({ draft, overrides: null });
+  assert.equal(second.packVersion, 2);
+  assert.match(logs.join('\n'), /current\.json 内容损坏/);
+
+  writeFileSync(currentPath, '{"packVersion":0}');
+  const third = await store.publish({ draft, overrides: null });
+  assert.equal(third.packVersion, 3);
+
+  // 文件系统错误不能被当成内容损坏吞掉。
+  rmSync(currentPath, { force: true });
+  mkdirSync(currentPath);
+  await assert.rejects(store.publish({ draft, overrides: null }), /EISDIR/);
+  assert.deepEqual(readdirSync(path.join(dir, 'versions')).sort(), ['1', '2', '3']);
 });
 
 // ------------------------------------------------------------- 纯函数
@@ -697,12 +935,18 @@ test('matchesEtag / 路径与文件名安全 / packEtag', () => {
   assert.equal(matchesEtag(`"other", "${etag}"`, etag), true);
   assert.equal(matchesEtag(`W/"${etag}"`, etag), true);
   assert.equal(matchesEtag(`  "${etag}" , "other"`, etag), true);
+  assert.equal(matchesEtag('*', etag), true);
+  assert.equal(matchesEtag('W/*', etag), true);
+  assert.equal(matchesEtag(`"other", *`, etag), true);
   assert.equal(matchesEtag(`W/"other"`, etag), false);
   assert.equal(matchesEtag('"other"', etag), false);
   assert.equal(matchesEtag('', etag), false);
 
   assert.equal(isSafeRelativePath('config/foo.toml'), true);
   assert.equal(isSafeRelativePath('config/mod/config.json'), true);
+  assert.equal(isSafeRelativePath('config/CONFIG.toml'), true);
+  assert.equal(isSafeRelativePath('config/console.txt'), true);
+  assert.equal(isSafeRelativePath('mods/com10/config.json'), true);
   assert.equal(isSafeRelativePath('../evil.toml'), false);
   assert.equal(isSafeRelativePath('/etc/passwd'), false);
   assert.equal(isSafeRelativePath('config\\foo.toml'), false);
@@ -710,14 +954,34 @@ test('matchesEtag / 路径与文件名安全 / packEtag', () => {
   assert.equal(isSafeRelativePath('C:/Windows/foo.toml'), false);
   assert.equal(isSafeRelativePath('config//foo.toml'), false);
   assert.equal(isSafeRelativePath('config/../foo.toml'), false);
+  assert.equal(isSafeRelativePath('config/foo./bar.toml'), false);
+  assert.equal(isSafeRelativePath('config/foo /bar.toml'), false);
+  assert.equal(isSafeRelativePath('config/foo.toml.'), false);
+  assert.equal(isSafeRelativePath('config/foo.toml '), false);
+  assert.equal(isSafeRelativePath('config/a:b.toml'), false);
+  assert.equal(isSafeRelativePath('CON/config.toml'), false);
+  assert.equal(isSafeRelativePath('config/NUL.txt'), false);
+  assert.equal(isSafeRelativePath('config/com1.jar'), false);
+  assert.equal(isSafeRelativePath('config/LPT9'), false);
 
   assert.equal(isSafeFilename('sodium-0.6.0.jar'), true);
+  assert.equal(isSafeFilename('console.jar'), true);
+  assert.equal(isSafeFilename('COM10.jar'), true);
+  assert.equal(isSafeFilename('con-sole.jar'), true);
   assert.equal(isSafeFilename('../evil.jar'), false);
   assert.equal(isSafeFilename('mods/sodium.jar'), false);
   assert.equal(isSafeFilename('bad\u0000.jar'), false);
+  assert.equal(isSafeFilename('foo.'), false);
+  assert.equal(isSafeFilename('foo '), false);
+  assert.equal(isSafeFilename('a:b.jar'), false);
+  assert.equal(isSafeFilename('CON'), false);
+  assert.equal(isSafeFilename('con.txt'), false);
+  assert.equal(isSafeFilename('COM1.jar'), false);
+  assert.equal(isSafeFilename('LPT9'), false);
 
   assert.equal(packEtag('abc'), sha256Hex('abc'));
   assert.equal(packEtag('abc'), createHash('sha256').update('abc').digest('hex'));
+  assert.equal(packEtag(Buffer.from('abc')), packEtag('abc'));
 });
 
 test('zip 读取上限可覆盖：overrides 接受高压缩比与大条目，安装器默认仍拒绝', () => {
@@ -761,6 +1025,214 @@ test('zip 读取上限可覆盖：overrides 接受高压缩比与大条目，安
   );
 });
 
+test('overrides 严格 zip：拒绝规范化绕过、重复、目录、符号链接与本地头不一致', () => {
+  const good = Buffer.from('enabled=true\n', 'utf8');
+  const evil = Buffer.from('evil\n', 'utf8');
+
+  const record = (filePath: string, data: Buffer): TestOverrideFile => ({
+    path: filePath,
+    sha256: sha256Hex(data),
+    size: data.length,
+  });
+  const manifestFor = (zip: Buffer, files: TestOverrideFile[]): TestOverrides => ({
+    sha256: sha256Hex(zip),
+    size: zip.length,
+    files,
+  });
+
+  const cases: Array<{
+    label: string;
+    zip: Buffer;
+    files: TestOverrideFile[];
+    message: RegExp;
+  }> = [];
+
+  const absolute = buildRawZip([{ name: '/config/foo.toml', data: good }]);
+  cases.push({
+    label: 'absolute name',
+    zip: absolute,
+    files: [record('config/foo.toml', good)],
+    message: /绝对路径/,
+  });
+
+  const backslash = buildRawZip([{ name: 'config\\foo.toml', data: good }]);
+  cases.push({
+    label: 'backslash name',
+    zip: backslash,
+    files: [record('config/foo.toml', good)],
+    message: /反斜杠/,
+  });
+
+  const traversal = buildRawZip([
+    { name: 'config/foo.toml', data: good },
+    { name: '../evil', data: evil },
+  ]);
+  cases.push({
+    label: 'valid file plus traversal entry',
+    zip: traversal,
+    files: [record('config/foo.toml', good)],
+    message: /\.\./,
+  });
+
+  // EOCD 少报条目数，让第二个条目藏在中央目录里。
+  const hiddenEntry = buildRawZip([
+    { name: 'config/foo.toml', data: good },
+    { name: 'config/hidden.toml', data: evil },
+  ]);
+  hiddenEntry.writeUInt16LE(1, hiddenEntry.length - 14);
+  hiddenEntry.writeUInt16LE(1, hiddenEntry.length - 12);
+  cases.push({
+    label: 'hidden central directory entry',
+    zip: hiddenEntry,
+    files: [record('config/foo.toml', good)],
+    message: /条目数与目录大小不一致/,
+  });
+
+  const duplicate = buildRawZip([
+    { name: 'config/foo.toml', data: good },
+    { name: 'config/foo.toml', data: evil },
+  ]);
+  cases.push({
+    label: 'duplicate entry',
+    zip: duplicate,
+    files: [record('config/foo.toml', good)],
+    message: /条目重复/,
+  });
+
+  const caseDuplicate = buildRawZip([
+    { name: 'config/foo.toml', data: good },
+    { name: 'config/FOO.TOML', data: evil },
+  ]);
+  cases.push({
+    label: 'case-insensitive duplicate',
+    zip: caseDuplicate,
+    files: [record('config/foo.toml', good), record('config/FOO.TOML', evil)],
+    message: /大小写不同而重复/,
+  });
+
+  const symlink = buildRawZip([
+    { name: 'config/link.toml', data: good, externalAttrs: 0o120777 << 16 },
+  ]);
+  cases.push({
+    label: 'symlink entry',
+    zip: symlink,
+    files: [record('config/link.toml', good)],
+    message: /符号链接/,
+  });
+
+  const specialFile = buildRawZip([
+    { name: 'config/pipe.toml', data: good, externalAttrs: 0o010777 << 16 },
+  ]);
+  cases.push({
+    label: 'special file type',
+    zip: specialFile,
+    files: [record('config/pipe.toml', good)],
+    message: /不是普通文件/,
+  });
+
+  const reservedName = buildRawZip([{ name: 'CON/config.toml', data: good }]);
+  cases.push({
+    label: 'Windows reserved segment',
+    zip: reservedName,
+    files: [record('CON/config.toml', good)],
+    message: /保留设备名/,
+  });
+
+  const colonName = buildRawZip([{ name: 'config/a:b.toml', data: good }]);
+  cases.push({
+    label: 'colon in segment',
+    zip: colonName,
+    files: [record('config/a:b.toml', good)],
+    message: /冒号/,
+  });
+
+  const directory = buildRawZip([
+    { name: 'config/foo.toml', data: good },
+    { name: 'config/', data: Buffer.alloc(0) },
+  ]);
+  cases.push({
+    label: 'directory entry',
+    zip: directory,
+    files: [record('config/foo.toml', good)],
+    message: /目录条目/,
+  });
+
+  const localMismatch = buildRawZip([
+    { name: 'config/foo.toml', localName: 'config/evil.toml', data: good },
+  ]);
+  cases.push({
+    label: 'local header name mismatch',
+    zip: localMismatch,
+    files: [record('config/foo.toml', good)],
+    message: /本地文件头名称/,
+  });
+
+  const illegalChar = buildRawZip([{ name: 'config/bad?.toml', data: good }]);
+  cases.push({
+    label: 'Windows illegal character',
+    zip: illegalChar,
+    files: [record('config/bad?.toml', good)],
+    message: /非法字符/,
+  });
+
+  const trailingDot = buildRawZip([{ name: 'config/foo./bar.toml', data: good }]);
+  cases.push({
+    label: 'trailing dot segment',
+    zip: trailingDot,
+    files: [record('config/foo./bar.toml', good)],
+    message: /点或空格结尾/,
+  });
+
+  for (const item of cases) {
+    assert.throws(
+      () => validateOverridesZip(item.zip, manifestFor(item.zip, item.files)),
+      item.message,
+      item.label
+    );
+    assert.throws(
+      () => readZipEntries(item.zip, { strict: true }),
+      item.message,
+      item.label
+    );
+  }
+
+  // 严格模式仍接受发布器产生的普通 zip（含 UTF-8 文本条目）。
+  const valid = buildZip({ 'config/foo.toml': good });
+  assert.deepEqual(
+    [...readZipEntries(valid, { strict: true }).keys()],
+    ['config/foo.toml']
+  );
+});
+
+test('发布拒绝可绕过的 overrides zip（合法文件 + ../evil）', async (t) => {
+  const dir = makeDir(t);
+  const app = makeApp(dir);
+  const good = Buffer.from('enabled=true\n', 'utf8');
+  const zip = buildRawZip([
+    { name: 'config/foo.toml', data: good },
+    { name: '../evil', data: Buffer.from('evil\n', 'utf8') },
+  ]);
+
+  const pack = baseDraft();
+  pack.overrides = {
+    sha256: sha256Hex(zip),
+    size: zip.length,
+    files: [{ path: 'config/foo.toml', sha256: sha256Hex(good), size: good.length }],
+  };
+  const response = await publishPack(app, pack, { overrides: zip });
+  assert.equal(response.status, 400);
+  assert.equal(existsSync(path.join(dir, 'current.json')), false);
+});
+
+test('zip 条目上限只计文件条目，不计目录', () => {
+  const zip = buildRawZip([
+    { name: 'config/foo.toml', data: 'x' },
+    { name: 'config/', data: Buffer.alloc(0) },
+  ]);
+  const entries = readZipEntries(zip, { maxEntries: 1 });
+  assert.deepEqual([...entries.keys()], ['config/foo.toml']);
+});
+
 test('校验模块：默认拒绝服务端字段，已存包解析接受并校验 overrides.url', () => {
   const draft = baseDraft();
   assert.throws(() => parseClientPackDraft({ ...draft, packVersion: 7 }), /packVersion/);
@@ -777,6 +1249,33 @@ test('校验模块：默认拒绝服务端字段，已存包解析接受并校�
         overrides: { ...overrides, url: '/api/launcher/client/overrides/1' },
       }),
     /overrides\.url/
+  );
+
+  const withBuildMetadata = parseClientPackDraft({
+    ...draft,
+    minLauncherVersion: '1.0.0+5',
+  });
+  assert.equal(withBuildMetadata.minLauncherVersion, '1.0.0+5');
+  const withPrerelease = parseClientPackDraft({
+    ...draft,
+    minLauncherVersion: '1.2.3-rc.1+build.5',
+  });
+  assert.equal(withPrerelease.minLauncherVersion, '1.2.3-rc.1+build.5');
+
+  const ordered = parseClientPackDraft({
+    ...draft,
+    overrides: {
+      sha256: '0'.repeat(64),
+      size: 2,
+      files: [
+        { path: 'config/a.toml', sha256: '0'.repeat(64), size: 1 },
+        { path: 'config/B.toml', sha256: '1'.repeat(64), size: 1 },
+      ],
+    },
+  });
+  assert.deepEqual(
+    ordered.overrides!.files.map((file) => file.path),
+    ['config/B.toml', 'config/a.toml']
   );
 
   const parsedDraft = parseClientPackDraft({ ...draft, overrides });
@@ -804,6 +1303,15 @@ test('校验模块：默认拒绝服务端字段，已存包解析接受并校�
   const wrongUrl = JSON.parse(JSON.stringify(finalized)) as TestPack;
   wrongUrl.overrides!.url = '/api/launcher/client/overrides/8';
   assert.throws(() => parseStoredClientPack(wrongUrl), /overrides\.url/);
+
+  // 读取端同样执行 Windows 名称规则与大小写重复检查。
+  const storedCaseDuplicate = JSON.parse(JSON.stringify(finalized)) as TestPack;
+  storedCaseDuplicate.mods[1]!.filename = storedCaseDuplicate.mods[0]!.filename.toUpperCase();
+  assert.throws(() => parseStoredClientPack(storedCaseDuplicate), /模组文件名.*大小写/);
+
+  const storedReservedPath = JSON.parse(JSON.stringify(finalized)) as TestPack;
+  storedReservedPath.overrides!.files[0]!.path = 'CON/config.toml';
+  assert.throws(() => parseStoredClientPack(storedReservedPath), /保留设备名/);
 });
 
 test('loadConfig：LAUNCHER_ADMIN_TOKEN 独立配置，clientPackDir 默认在数据目录下', () => {

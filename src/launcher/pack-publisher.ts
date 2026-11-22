@@ -1,6 +1,6 @@
 import type { Stats } from 'node:fs';
 import { lstat, readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type {
   ClientPackDraft,
   ClientPackDraftOverrides,
@@ -56,6 +56,9 @@ const MIN_LAUNCHER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const CDN_PREFIX = 'https://cdn.modrinth.com/';
 const MAX_NOTES = 500;
 const FETCH_TIMEOUT_MS = 30_000;
+const PUBLISH_TIMEOUT_MS = 60_000;
+const MODRINTH_RETRY_LIMIT = 2;
+const MAX_RETRY_DELAY_MS = 5_000;
 
 export class PackPublishError extends Error {
   constructor(message: string) {
@@ -99,7 +102,7 @@ const SPEC_KEYS = new Set([
 
 const requireRecord = (value: unknown, label: string): JsonRecord => {
   const record = asRecord(value);
-  if (!record) fail(`${label} 必须是对象`);
+  if (!record) return fail(`${label} 必须是对象`);
   return record;
 };
 
@@ -112,7 +115,7 @@ const requireString = (value: unknown, label: string, max: number): string => {
 const requireInt = (value: unknown, label: string, min: number, max: number): number => {
   const number = asNumber(value);
   if (number === null || !Number.isInteger(number) || number < min || number > max) {
-    fail(`${label} 不合法`);
+    return fail(`${label} 不合法`);
   }
   return number;
 };
@@ -142,12 +145,18 @@ export const parsePackSpec = (value: unknown): ClientPackSpec => {
   if (!isValidVersionId(gameVersion)) fail('gameVersion 不合法');
 
   const loader = requireRecord(record.loader, 'loader');
+  for (const key of Object.keys(loader)) {
+    if (key !== 'type' && key !== 'version') fail(`loader 包含未知字段: ${key}`);
+  }
   const type = requireString(loader.type, 'loader.type', 16) as ClientLoaderType;
   if (!LOADER_TYPES.has(type)) fail('loader.type 不合法');
   const loaderVersion = requireString(loader.version, 'loader.version', 64);
   if (!isValidVersionId(loaderVersion)) fail('loader.version 不合法');
 
   const javaRecord = requireRecord(record.java, 'java');
+  for (const key of Object.keys(javaRecord)) {
+    if (key !== 'major' && key !== 'component') fail(`java 包含未知字段: ${key}`);
+  }
   const major = requireInt(javaRecord.major, 'java.major', 1, 99);
   const componentValue = javaRecord.component;
   const component =
@@ -251,13 +260,18 @@ const isUnsafeSegment = (name: string): boolean =>
   name === '..' ||
   name.includes('/') ||
   name.includes('\\') ||
-  /[\u0000-\u001f]/.test(name);
+  /[\u0000-\u001f]/.test(name) ||
+  // Windows 保留字符：Linux 上能建出这些名字，但无法跨平台解压。
+  /[<>:"|?*]/.test(name) ||
+  // 首尾空白（含 NBSP）不能保留：服务端解析清单时会 trim 路径，
+  // 保留会让 pack.json 与 zip 条目不一致。
+  name !== name.trim();
 
 /**
  * 递归扫描 overrides 目录。拒绝符号链接、非普通文件、绝对路径、`..`、
- * 反斜杠、控制字符和超过契约长度上限的路径；只把相对路径（`/` 分隔）
- * 写进清单。目录不存在或不是目录时报错（由 spec 作者修正，而不是静默
- * 发布一个缺少配置的包）。
+ * 反斜杠、控制字符、Windows 保留字符、首尾空白（服务端会 trim 路径）
+ * 和超过契约长度上限的路径；只把相对路径（`/` 分隔）写进清单。目录不存在
+ * 或不是目录时报错（由 spec 作者修正，而不是静默发布一个缺少配置的包）。
  */
 export const buildOverridesPayload = async (
   dir: string,
@@ -265,20 +279,25 @@ export const buildOverridesPayload = async (
 ): Promise<OverridesPayload | null> => {
   const { maxFiles, maxBytes, maxZipBytes } = mergeOverridesLimits(limits);
 
+  // 先 resolve 去掉尾斜杠：`lstat('link/')` 会跟随符号链接，
+  // 根目录的符号链接检查会失效。
+  const root = resolve(dir);
   let rootStat: Stats;
   try {
-    rootStat = await lstat(dir);
-  } catch {
-    return fail(`overrides 目录不存在: ${dir}`);
+    rootStat = await lstat(root);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return fail(`overrides 目录不存在: ${root}`);
+    return fail(`无法读取 overrides 目录 ${root}: ${(error as Error).message}`);
   }
   if (rootStat.isSymbolicLink()) fail('overrides 目录不能是符号链接');
-  if (!rootStat.isDirectory()) fail(`overrides 路径不是目录: ${dir}`);
+  if (!rootStat.isDirectory()) fail(`overrides 路径不是目录: ${root}`);
 
   const files: { path: string; content: Buffer }[] = [];
   let totalBytes = 0;
 
   const walk = async (relative: string): Promise<void> => {
-    const entries = await readdir(join(dir, relative), { withFileTypes: true });
+    const entries = await readdir(join(root, relative), { withFileTypes: true });
     entries.sort((left, right) => comparePaths(left.name, right.name));
 
     for (const entry of entries) {
@@ -296,7 +315,25 @@ export const buildOverridesPayload = async (
       if (!entry.isFile()) fail(`overrides 只允许普通文件: ${path}`);
 
       if (files.length + 1 > maxFiles) fail(`overrides 文件数量超过上限 ${maxFiles}`);
-      const content = await readFile(join(dir, path));
+
+      // 先 lstat 确认普通文件并按剩余额度校验大小，再 readFile；
+      // 否则超大文件会先被整份读进内存才拒绝。
+      let stat: Stats;
+      try {
+        stat = await lstat(join(root, path));
+      } catch (error) {
+        return fail(`无法读取 overrides 文件 ${path}: ${(error as Error).message}`);
+      }
+      if (!stat.isFile()) fail(`overrides 只允许普通文件: ${path}`);
+      const remaining = maxBytes - totalBytes;
+      if (stat.size > remaining) {
+        fail(
+          `overrides 解压后总量超过上限 ${maxBytes} 字节` +
+            `（剩余额度 ${remaining}，${path} ${stat.size} 字节）`
+        );
+      }
+
+      const content = await readFile(join(root, path));
       totalBytes += content.length;
       if (totalBytes > maxBytes) fail(`overrides 解压后总量超过上限 ${maxBytes} 字节`);
       files.push({ path, content });
@@ -353,30 +390,59 @@ const loaderAccepts = (loader: ClientLoaderType, versionLoaders: string[]): bool
     ? versionLoaders.includes('quilt') || versionLoaders.includes('fabric')
     : versionLoaders.includes(loader);
 
+const RETRYABLE_STATUS = (status: number): boolean => status === 429 || status >= 500;
+
+/** Retry-After 只接受秒数；延迟封顶，避免一次发布卡太久。 */
+const retryAfterMs = (value: string | null): number | null => {
+  if (value === null) return null;
+  const text = value.trim();
+  if (!text) return null;
+  const seconds = Number(text);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return Math.min(seconds * 1_000, MAX_RETRY_DELAY_MS);
+};
+
 const modrinthGet = async (client: ModrinthClient, path: string): Promise<unknown> => {
-  let response: Response;
-  try {
-    response = await client.fetchImpl(`${client.baseUrl}${path}`, {
-      headers: {
-        'user-agent': PACK_PUBLISHER_USER_AGENT,
-        accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-  } catch (error) {
-    throw new PackPublishError(
-      `Modrinth 请求失败：${path}（${(error as Error).message}）`
-    );
-  }
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response;
+    try {
+      response = await client.fetchImpl(`${client.baseUrl}${path}`, {
+        headers: {
+          'user-agent': PACK_PUBLISHER_USER_AGENT,
+          accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new PackPublishError(
+        `Modrinth 请求失败：${path}（${(error as Error).message}）`
+      );
+    }
 
-  if (!response.ok) {
-    throw new PackPublishError(`Modrinth 请求失败（HTTP ${response.status}）：${path}`);
-  }
+    if (!response.ok) {
+      const delay = retryAfterMs(response.headers.get('retry-after'));
+      if (
+        attempt < MODRINTH_RETRY_LIMIT &&
+        RETRYABLE_STATUS(response.status) &&
+        delay !== null
+      ) {
+        // 404 等不重试；429/5xx 只在服务端明确给出 Retry-After 时退避。
+        await response.text().catch(() => '');
+        if (delay > 0) {
+          await new Promise<void>((resolveDelay) => {
+            setTimeout(resolveDelay, delay);
+          });
+        }
+        continue;
+      }
+      throw new PackPublishError(`Modrinth 请求失败（HTTP ${response.status}）：${path}`);
+    }
 
-  try {
-    return await response.json();
-  } catch {
-    throw new PackPublishError(`Modrinth 响应不是合法 JSON：${path}`);
+    try {
+      return await response.json();
+    } catch {
+      throw new PackPublishError(`Modrinth 响应不是合法 JSON：${path}`);
+    }
   }
 };
 
@@ -386,7 +452,7 @@ const fetchProject = async (client: ModrinthClient, reference: string): Promise<
   const record = asRecord(
     await modrinthGet(client, `/project/${encodeURIComponent(reference)}`)
   );
-  if (!record) fail(`Modrinth 项目响应不是对象: ${reference}`);
+  if (!record) return fail(`Modrinth 项目响应不是对象: ${reference}`);
 
   const id = asString(record.id)?.trim() ?? '';
   if (!ID_PATTERN.test(id)) fail(`Modrinth 项目 id 不合法: ${reference}`);
@@ -410,11 +476,22 @@ const fetchVersionList = async (
     state.client,
     `/project/${encodeURIComponent(projectId)}/version`
   );
-  if (!Array.isArray(data)) fail(`Modrinth 版本列表不是数组: ${projectId}`);
+  if (!Array.isArray(data)) return fail(`Modrinth 版本列表不是数组: ${projectId}`);
 
-  const versions = data
+  const versions = (data as unknown[])
     .map((item) => asRecord(item))
     .filter((item): item is JsonRecord => item !== null);
+
+  for (const version of versions) {
+    const owner = asString(version.project_id)?.trim() ?? '';
+    if (owner !== projectId) {
+      return fail(
+        `Modrinth 版本列表包含其他项目的版本: ${asString(version.id) ?? '(缺少 id)'}` +
+          `（期望 ${projectId}，实际 ${owner || '缺失'}）`
+      );
+    }
+  }
+
   state.versionLists.set(projectId, versions);
   return versions;
 };
@@ -428,7 +505,7 @@ const fetchVersion = async (state: ModrinthState, versionId: string): Promise<Js
   const record = asRecord(
     await modrinthGet(state.client, `/version/${encodeURIComponent(versionId)}`)
   );
-  if (!record) fail(`Modrinth 版本响应不是对象: ${versionId}`);
+  if (!record) return fail(`Modrinth 版本响应不是对象: ${versionId}`);
   state.versions.set(versionId, record);
   return record;
 };
@@ -508,7 +585,7 @@ const toMod = (project: ProjectInfo, version: JsonRecord): ClientPackMod => {
   if (!ID_PATTERN.test(versionId)) fail(`项目 ${project.id} 的版本 id 不合法: ${versionId}`);
 
   const file = selectPrimaryFile(asArray(version.files));
-  if (!file) fail(`项目 ${project.id} 的版本 ${versionId} 缺少文件`);
+  if (!file) return fail(`项目 ${project.id} 的版本 ${versionId} 缺少文件`);
 
   const filename = asString(file.filename)?.trim() ?? '';
   if (!filename || !isSafeFilename(filename)) {
@@ -523,7 +600,7 @@ const toMod = (project: ProjectInfo, version: JsonRecord): ClientPackMod => {
 
   const size = asNumber(file.size);
   if (size === null || !Number.isInteger(size) || size < 1 || size > MAX_MOD_BYTES) {
-    fail(`项目 ${project.id} 的版本 ${versionId} 缺少合法的 size`);
+    return fail(`项目 ${project.id} 的版本 ${versionId} 缺少合法的 size`);
   }
 
   const url = asString(file.url)?.trim() ?? '';
@@ -735,10 +812,11 @@ export const resolveClientPack = async (
     ...(overrides ? { overrides: overrides.manifest } : {}),
   };
 
-  // 与服务端同一套校验：发布阶段就把坏包拦住。zip 也按读取端的规则
-  // 重新读一遍，确保 admin 接口不会因为条目上限/压缩比而拒绝。
+  // 与服务端同一套校验：发布阶段就把坏包拦住。zip 用「规范化后的清单」
+  // 重新读一遍（draft 解析会 trim 路径），保证 pack.json 与 zip 条目一致，
+  // 而不是只校验扫描时的原始清单。
   const pack = parseClientPackDraft(draft);
-  if (overrides) validateOverridesZip(overrides.zip, overrides.manifest);
+  if (overrides && pack.overrides) validateOverridesZip(overrides.zip, pack.overrides);
 
   return overrides ? { pack, overridesZip: overrides.zip } : { pack };
 };
@@ -790,6 +868,7 @@ export const publishClientPack = async (
       method: 'PUT',
       headers: { authorization: `Bearer ${token}` },
       body: form,
+      signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
     });
   } catch (error) {
     throw new PackPublishError(`发布请求失败: ${(error as Error).message}`);
@@ -811,7 +890,7 @@ export const publishClientPack = async (
 
   const packVersion = asNumber(asRecord(body)?.packVersion);
   if (packVersion === null || !Number.isInteger(packVersion) || packVersion < 1) {
-    fail('发布响应缺少 packVersion');
+    return fail('发布响应缺少 packVersion');
   }
 
   return { packVersion, body };

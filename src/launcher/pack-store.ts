@@ -28,8 +28,8 @@ export interface ClientPackStoreOptions {
 }
 
 export interface StoredClientPack {
-  /** pack.json 原始文本；ETag 与响应体都直接用它，避免重新序列化。 */
-  raw: string;
+  /** pack.json 原始字节；ETag 与响应体都直接用它，避免任何重编码。 */
+  raw: Buffer;
   pack: ClientPack;
 }
 
@@ -47,6 +47,14 @@ export interface ClientPackStore {
 
 const VERSION_PATTERN = /^[1-9]\d*$/;
 const DEFAULT_RETAIN = 5;
+
+/** current.json 内容损坏（不同于 EACCES/EIO 等文件系统错误）。 */
+class CorruptCurrentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CorruptCurrentError';
+  }
+}
 
 const suffix = (): string => randomBytes(8).toString('hex');
 
@@ -80,7 +88,7 @@ const readCurrentVersion = async (base: string): Promise<number | null> => {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error('current.json 不是合法 JSON');
+    throw new CorruptCurrentError('current.json 不是合法 JSON');
   }
 
   const record =
@@ -93,7 +101,7 @@ const readCurrentVersion = async (base: string): Promise<number | null> => {
     !Number.isSafeInteger(packVersion) ||
     packVersion < 1
   ) {
-    throw new Error('current.json 的 packVersion 不合法');
+    throw new CorruptCurrentError('current.json 的 packVersion 不合法');
   }
   return packVersion;
 };
@@ -173,13 +181,12 @@ export const createClientPackStore = (options: ClientPackStoreOptions): ClientPa
     if (packVersion === null) return null;
 
     const raw = await readFile(
-      path.join(base, 'versions', String(packVersion), 'pack.json'),
-      'utf8'
+      path.join(base, 'versions', String(packVersion), 'pack.json')
     );
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(raw.toString('utf8'));
     } catch {
       throw new Error('pack.json 不是合法 JSON');
     }
@@ -217,7 +224,15 @@ export const createClientPackStore = (options: ClientPackStoreOptions): ClientPa
       const versionsDir = path.join(base, 'versions');
       await mkdir(versionsDir, { recursive: true });
 
-      const currentVersion = await readCurrentVersion(base);
+      let currentVersion: number | null;
+      try {
+        currentVersion = await readCurrentVersion(base);
+      } catch (error) {
+        if (!(error instanceof CorruptCurrentError)) throw error;
+        // 内容损坏不应阻断发布：记日志后按现有版本目录续号。
+        log(`current.json 内容损坏，按版本目录续号: ${error.message}`);
+        currentVersion = null;
+      }
       const versions = await listVersions(base);
       const next = Math.max(currentVersion ?? 0, versions.at(-1) ?? 0) + 1;
 

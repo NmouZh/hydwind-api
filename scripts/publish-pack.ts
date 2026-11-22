@@ -1,5 +1,5 @@
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { ClientPackSpec } from '../src/launcher/pack-publisher.ts';
 import {
   DEFAULT_API_BASE,
@@ -119,7 +119,9 @@ const parseArguments = (argv: string[]): ParsedArguments | 'help' => {
 const readSpec = (specPath: string): ClientPackSpec => {
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(specPath, 'utf8'));
+    // Windows 编辑器常写 UTF-8 BOM，JSON.parse 不接受，先去掉。
+    const text = readFileSync(specPath, 'utf8');
+    raw = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
   } catch (error) {
     throw new PackPublishError(`读取 spec 失败: ${(error as Error).message}`);
   }
@@ -129,6 +131,12 @@ const readSpec = (specPath: string): ClientPackSpec => {
 
 const isAbsolute = (value: string): boolean =>
   value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value);
+
+/** `child` 是否等于 `parent` 或位于其下（按路径边界，不是字符串前缀）。 */
+const isInside = (parent: string, child: string): boolean => {
+  const rel = relative(parent, child);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+};
 
 export const main = async (
   argv: string[],
@@ -179,6 +187,9 @@ export const main = async (
 
     const packJson = serializeClientPackDraft(resolved.pack);
     const outDir = resolve(cwd, parsed.out ?? defaultPackOutDir(resolved.pack.createdAt));
+    if (spec.overridesDir && isInside(resolve(spec.overridesDir), outDir)) {
+      throw new PackPublishError('输出目录不能位于 overrides 目录内');
+    }
     mkdirSync(outDir, { recursive: true });
 
     const packPath = join(outDir, 'pack.json');
@@ -189,6 +200,10 @@ export const main = async (
       const overridesPath = join(outDir, 'overrides.zip');
       writeFileSync(overridesPath, resolved.overridesZip);
       stdout(`已生成 overrides: ${overridesPath}（${resolved.overridesZip.length} 字节）`);
+    } else {
+      // 同一 --out 上次可能生成过 zip；没有 overrides 时必须删除，
+      // 否则会留下与本次 pack.json 不一致的旧文件。
+      rmSync(join(outDir, 'overrides.zip'), { force: true });
     }
 
     if (!parsed.publish) return 0;

@@ -14,7 +14,7 @@ import { crc32, deflateRawSync } from 'node:zlib';
  * 不写 ZIP64：调用方（overrides）有 50 MiB 上限，条目数与大小都远小于
  * 经典 ZIP 的 0xFFFF / 0xFFFFFFFF 边界。读取端可直接用 `zip.ts` 的
  * `readZipEntries`。安全边界与读取器一致：拒绝绝对路径、`..`、反斜杠、
- * 控制字符和重复条目名。
+ * 控制字符、Windows 保留字符和重复条目名。
  */
 
 export class ZipWriteError extends Error {
@@ -56,6 +56,11 @@ const validateEntryPath = (path: string): void => {
     throw new ZipWriteError(`ZIP 条目路径不合法: ${path}`);
   }
   if (/^[A-Za-z]:/.test(path) || /[\u0000-\u001f]/.test(path)) {
+    throw new ZipWriteError(`ZIP 条目路径不合法: ${path}`);
+  }
+  // Windows 保留字符：与 client-pack 的路径规则保持一致，避免包在
+  // Windows 启动器上无法解压。
+  if (/[<>:"|?*]/.test(path)) {
     throw new ZipWriteError(`ZIP 条目路径不合法: ${path}`);
   }
   if (path.split('/').some((part) => part === '' || part === '.' || part === '..')) {

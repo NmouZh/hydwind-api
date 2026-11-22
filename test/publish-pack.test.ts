@@ -289,6 +289,58 @@ test('显式版本：直接使用（可为 beta），仍校验游戏版本与加
   );
 });
 
+test('显式版本必须属于请求的项目', async () => {
+  await assert.rejects(
+    resolveWith(loadFixture(), {
+      ...baseSpec(),
+      mods: [{ project: 'sodium', version: 'iris-200' }],
+    }),
+    /不属于项目/
+  );
+});
+
+test('版本列表包含其他项目的版本时报错', async () => {
+  const data = cloneFixture();
+  versionIn(data, 'AANobbMI', 'sod-200').project_id = 'YL57xq9U';
+  await assert.rejects(
+    resolveWith(data, { ...baseSpec(), mods: ['sodium'] }),
+    /其他项目的版本/
+  );
+});
+
+test('Modrinth 429/5xx 仅在带 Retry-After 时有限重试', async () => {
+  const modrinth = makeModrinthFetch(loadFixture());
+  let attempts = 0;
+  const retrying = (async (input: string | URL | Request, init?: RequestInit) => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response('rate limited', {
+        status: 429,
+        headers: { 'retry-after': '0' },
+      });
+    }
+    return modrinth.fn(input, init);
+  }) as typeof fetch;
+
+  const resolved = await resolveClientPack(baseSpec(), {
+    fetchImpl: retrying,
+    now: fixedNow,
+  });
+  assert.ok(resolved.pack.mods.length > 0);
+  assert.ok(attempts > modrinth.calls.length);
+
+  let noRetryAttempts = 0;
+  const noRetry = (async () => {
+    noRetryAttempts += 1;
+    return new Response('server error', { status: 503 });
+  }) as typeof fetch;
+  await assert.rejects(
+    resolveClientPack(baseSpec(), { fetchImpl: noRetry, now: fixedNow }),
+    /HTTP 503/
+  );
+  assert.equal(noRetryAttempts, 1);
+});
+
 test('加载器兼容：quilt 接受 fabric 版本，forge/neoforge 不互认', async () => {
   const data = loadFixture();
   const quilt = {
@@ -359,6 +411,22 @@ test('依赖的显式版本与游戏版本不匹配报错', async () => {
   await assert.rejects(
     resolveWith(data, { ...baseSpec(), mods: ['iris'] }),
     /不支持游戏版本 26\.3/
+  );
+});
+
+test('依赖只给 version_id 时反查所属项目并解析', async () => {
+  const data = cloneFixture();
+  const iris = versionIn(data, 'YL57xq9U', 'iris-200');
+  const lithiumDependency = iris.dependencies.find(
+    (dependency) => dependency.project_id === 'gvQqBUqZ'
+  );
+  assert.ok(lithiumDependency);
+  delete lithiumDependency.project_id;
+
+  const resolved = await resolveWith(data, { ...baseSpec(), mods: ['iris'] });
+  assert.equal(
+    resolved.pack.mods.find((mod) => mod.projectId === 'gvQqBUqZ')?.versionId,
+    'lit-100'
   );
 });
 
@@ -545,6 +613,21 @@ test('主文件缺 sha512/size/filename 或 URL 非法都报错', async () => {
   );
 });
 
+test('name 与 versionNumber 超长时截断到契约上限', async () => {
+  const data = cloneFixture();
+  data.projects.sodium.title = 'T'.repeat(150);
+  versionIn(data, 'AANobbMI', 'sod-200').version_number = 'v'.repeat(80);
+
+  const resolved = await resolveWith(data, {
+    ...baseSpec(),
+    mods: [{ project: 'sodium', version: 'sod-200' }],
+  });
+  const mod = resolved.pack.mods[0];
+  assert.ok(mod);
+  assert.equal(mod.name, 'T'.repeat(100));
+  assert.equal(mod.versionNumber, 'v'.repeat(64));
+});
+
 // -------------------------------------------------------------- overrides
 
 test('overrides：确定性 zip（排序、固定时间戳、UTF-8）、逐文件清单、可读回', async (t) => {
@@ -649,6 +732,67 @@ test('overrides 上限：文件数、解压总量、zip 大小', async (t) => {
   await assert.rejects(buildOverridesPayload(dir, { maxZipBytes: 1 }), /zip 超过大小上限/);
 });
 
+test('overrides 按剩余额度在读取前拒绝超大文件', async (t) => {
+  const dir = makeTempDir();
+  t.after(() => cleanupDir(dir));
+  writeFileSync(join(dir, 'big.bin'), Buffer.alloc(4));
+
+  await assert.rejects(buildOverridesPayload(dir, { maxBytes: 3 }), /总量超过上限/);
+
+  const exact = await buildOverridesPayload(dir, { maxBytes: 4 });
+  assert.ok(exact);
+  assert.equal(exact.manifest.files[0].size, 4);
+});
+
+test('overrides 拒绝首尾空白（含 NBSP）与 Windows 保留字符（POSIX）', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX 文件名测试');
+    return;
+  }
+  const dir = makeTempDir();
+  t.after(() => cleanupDir(dir));
+
+  const spacedDir = join(dir, ' config');
+  mkdirSync(spacedDir, { recursive: true });
+  writeFileSync(join(spacedDir, 'a.toml'), 'x');
+  await assert.rejects(buildOverridesPayload(dir), /路径不合法/, ' config/a.toml');
+  rmSync(spacedDir, { recursive: true, force: true });
+
+  const names = [
+    ' lead.txt',
+    'trail.txt ',
+    `${String.fromCharCode(0xa0)}nbsp.txt`,
+    'bad?name.txt',
+  ];
+  for (const name of names) {
+    try {
+      writeFileSync(join(dir, name), 'x');
+    } catch {
+      t.skip(`当前平台不允许文件名 ${JSON.stringify(name)}`);
+      return;
+    }
+    await assert.rejects(buildOverridesPayload(dir), /路径不合法/, name);
+    rmSync(join(dir, name), { force: true });
+  }
+});
+
+test('overrides 根目录带尾斜杠时仍拒绝符号链接', async (t) => {
+  const base = makeTempDir();
+  t.after(() => cleanupDir(base));
+  const real = join(base, 'real');
+  mkdirSync(real);
+  writeFileSync(join(real, 'a.txt'), 'x');
+  const link = join(base, 'link');
+  try {
+    symlinkSync(real, link, 'dir');
+  } catch {
+    t.skip('当前平台不允许创建符号链接');
+    return;
+  }
+
+  await assert.rejects(buildOverridesPayload(`${link}/`), /符号链接/);
+});
+
 test('无 overrides：空目录省略，目录不存在报错', async (t) => {
   const dir = makeTempDir();
   t.after(() => cleanupDir(dir));
@@ -729,6 +873,18 @@ test('spec 形状校验：未知字段、非法值、重复项目', () => {
     () => parsePackSpec({ ...baseSpec(), mods: [{ project: 'sodium', version: '../x' }] }),
     /version/
   );
+  assert.throws(
+    () =>
+      parsePackSpec({
+        ...baseSpec(),
+        loader: { type: 'fabric', version: '0.20.1', extra: true },
+      }),
+    /loader 包含未知字段/
+  );
+  assert.throws(
+    () => parsePackSpec({ ...baseSpec(), java: { major: 25, extra: true } }),
+    /java 包含未知字段/
+  );
 });
 
 // ---------------------------------------------------------------- publish
@@ -760,6 +916,7 @@ test('publish：FormData 字段、Authorization、packVersion；失败与网络�
   assert.equal(calls[0].url, 'http://api.test/api/launcher/admin/client-pack');
   assert.equal(calls[0].init.method, 'PUT');
   assert.deepEqual(calls[0].init.headers, { authorization: 'Bearer secret' });
+  assert.ok(calls[0].init.signal instanceof AbortSignal);
 
   const form = calls[0].init.body as FormData;
   assert.ok(form instanceof FormData);
@@ -929,13 +1086,53 @@ test('CLI：默认输出目录、--out、无 overrides、publish 成败与退出
   );
   assert.ok(stderr.some((line) => line.includes('发布客户端包失败')));
 
-  // 缺令牌：退出码 1，且不请求管理接口。
+  // --help：只打印用法，退出码 0。
+  assert.equal(await main(['--help'], options), 0);
+  assert.ok(stdout.some((line) => line.includes('用法')));
+
+  // spec 不是合法 JSON：退出码 1。
+  const badJsonPath = join(root, 'spec-bad.json');
+  writeFileSync(badJsonPath, '{');
+  assert.equal(await main([badJsonPath], options), 1);
+  assert.ok(stderr.some((line) => line.includes('读取 spec 失败')));
+
+  // 带 UTF-8 BOM 的 spec 也能读取。
+  const bomPath = join(root, 'spec-bom.json');
+  writeFileSync(
+    bomPath,
+    `${String.fromCharCode(0xfeff)}${JSON.stringify(specWithoutOverrides)}`
+  );
+  const bomOut = join(root, 'bom-out');
+  assert.equal(await main([bomPath, '--out', bomOut], options), 0);
+  assert.ok(existsSync(join(bomOut, 'pack.json')));
+
+  // 相对 --out 相对 cwd。
+  assert.equal(await main([specNoOverridesPath, '--out', 'relative-out'], options), 0);
+  assert.ok(existsSync(join(root, 'relative-out', 'pack.json')));
+
+  // 同一输出目录复用时，无 overrides 的运行会删除上一轮的 zip。
+  const reuseOut = join(root, 'reuse-out');
+  assert.equal(await main([specPath, '--out', reuseOut], options), 0);
+  assert.ok(existsSync(join(reuseOut, 'overrides.zip')));
+  assert.equal(await main([specNoOverridesPath, '--out', reuseOut], options), 0);
+  assert.equal(existsSync(join(reuseOut, 'overrides.zip')), false);
+
+  // 输出目录不能落在 overrides 目录内。
+  assert.equal(
+    await main([specPath, '--out', join(overridesDir, 'nested-out')], options),
+    1
+  );
+  assert.ok(stderr.some((line) => line.includes('overrides 目录')));
+
+  // 缺令牌：退出码 1，且不请求管理接口或 Modrinth。
   const beforeMissingToken = adminCalls.length;
+  const modrinthCallsBeforeMissingToken = modrinth.calls.length;
   assert.equal(
     await main([specPath, '--publish'], { ...options, env: {} }),
     1
   );
   assert.equal(adminCalls.length, beforeMissingToken);
+  assert.equal(modrinth.calls.length, modrinthCallsBeforeMissingToken);
   assert.ok(stderr.some((line) => line.includes('LAUNCHER_ADMIN_TOKEN')));
 
   // 参数错误：退出码 2。
@@ -967,6 +1164,10 @@ test('zip-write：乱序输入排序一致、固定时间戳、UTF-8、store 可
   assert.equal(zip.readUInt16LE(10), 0);
   assert.equal(zip.readUInt16LE(12), 0x21);
 
+  // CRC32 已知常量："hello" = 0x3610a686。
+  const crcZip = writeZipEntries([{ path: 'hello.txt', data: Buffer.from('hello') }]);
+  assert.equal(crcZip.readUInt32LE(14), 0x3610a686);
+
   const stored = writeZipEntries([{ path: 'a.txt', data: Buffer.from('alpha') }], {
     method: 'store',
   });
@@ -985,4 +1186,20 @@ test('zip-write：乱序输入排序一致、固定时间戳、UTF-8、store 可
       ]),
     /路径重复/
   );
+
+  for (const path of [
+    'a<b.txt',
+    'a>b.txt',
+    'a"b.txt',
+    'a|b.txt',
+    'a?b.txt',
+    'a*b.txt',
+    'a:b.txt',
+  ]) {
+    assert.throws(
+      () => writeZipEntries([{ path, data: Buffer.from('x') }]),
+      /路径不合法/,
+      path
+    );
+  }
 });

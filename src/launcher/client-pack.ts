@@ -63,13 +63,22 @@ const LOADER_TYPES = new Set<ClientLoaderType>(['fabric', 'quilt', 'forge', 'neo
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const SHA512_PATTERN = /^[a-f0-9]{128}$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-const MIN_LAUNCHER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+/**
+ * 严格 SemVer 2.0.0：三段数字不允许前导零；预发布标识非空，数字标识不允许
+ * 前导零；构建元数据允许（例如 1.0.0+5）。
+ */
+const SEMVER_PATTERN =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const MAX_MODS = 200;
 const MAX_MOD_BYTES = 512 * 1024 * 1024;
 const MAX_OVERRIDE_FILES = 2_000;
 export const MAX_OVERRIDES_BYTES = 50 * 1024 * 1024;
 const MAX_NOTES = 500;
 const MAX_PATH = 240;
+
+/** 与 zip-write 一致：按 UTF-16 码元比较，避免 locale 影响清单顺序。 */
+const comparePathOrdinals = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
 
 /**
  * overrides 合同的 zip 读取上限：单条目与解压总量都放宽到 50 MiB，
@@ -82,7 +91,8 @@ const OVERRIDES_ZIP_LIMITS: ZipReadLimits = {
   maxCompressionRatio: 10_000,
 };
 
-const fail = (message: string): never => {
+// 显式标注变量类型，TypeScript 才会把调用识别为 never-returning 并继续窄化。
+const fail: (message: string) => never = (message) => {
   throw new BadRequestError(message);
 };
 
@@ -112,19 +122,79 @@ const requireHex = (value: unknown, pattern: RegExp, label: string): string => {
   return text;
 };
 
-export const isSafeRelativePath = (value: string): boolean => {
-  if (!value || value.length > MAX_PATH) return false;
-  if (value.startsWith('/') || value.includes('\\') || value.includes('\0')) return false;
-  if (/^[A-Za-z]:/.test(value)) return false;
-  if (/[\u0000-\u001f]/.test(value)) return false;
-  return value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+/** Windows 保留设备名；带扩展名（CON.txt）同样保留。COM1..9 / LPT1..9 之外不拦。 */
+const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+/**
+ * 单个路径段（或文件名）在 Windows 上的额外禁忌。
+ * Windows 会归一化尾点/尾空格，NTFS 冒号表示备用数据流，保留设备名不能落盘。
+ */
+const segmentIssue = (segment: string): string | null => {
+  if (segment.endsWith('.') || segment.endsWith(' ')) {
+    return '路径段不能以点或空格结尾（Windows 会归一化）';
+  }
+  if (segment.includes(':')) return '路径段不能包含冒号（NTFS 数据流）';
+  if (WINDOWS_RESERVED_NAME.test(segment)) {
+    return `路径段不能是 Windows 保留设备名（${segment}）`;
+  }
+  return null;
 };
 
-export const isSafeFilename = (value: string): boolean => {
-  if (!value || value.length > 200) return false;
-  if (value.includes('/') || value.includes('\\') || value.includes('\0')) return false;
-  if (value === '.' || value === '..') return false;
-  return !/[\u0000-\u001f]/.test(value);
+const relativePathIssue = (value: string): string | null => {
+  if (!value || value.length > MAX_PATH) return '长度不合法';
+  if (value.startsWith('/') || value.includes('\\') || value.includes('\0')) {
+    return '必须是安全的相对路径';
+  }
+  if (/^[A-Za-z]:/.test(value)) return '不允许盘符路径';
+  if (/[\u0000-\u001f]/.test(value)) return '包含控制字符';
+  for (const part of value.split('/')) {
+    if (part === '' || part === '.' || part === '..') return '包含空段、. 或 ..';
+    const issue = segmentIssue(part);
+    if (issue) return issue;
+  }
+  return null;
+};
+
+const filenameIssue = (value: string): string | null => {
+  if (!value || value.length > 200) return '长度不合法';
+  if (value.includes('/') || value.includes('\\') || value.includes('\0')) {
+    return '不能包含路径分隔符';
+  }
+  if (value === '.' || value === '..') return '不能是 . 或 ..';
+  if (/[\u0000-\u001f]/.test(value)) return '包含控制字符';
+  return segmentIssue(value);
+};
+
+export const isSafeRelativePath = (value: string): boolean => relativePathIssue(value) === null;
+
+export const isSafeFilename = (value: string): boolean => filenameIssue(value) === null;
+
+/**
+ * requireString 会 trim 首尾空白，会把末尾空格悄悄归一掉；
+ * 尾空格在 Windows 是真实的归一化风险，必须在 trim 之前直接拒绝。
+ */
+const hasTrailingWhitespace = (value: string): boolean => value !== value.trimEnd();
+
+const requireFilename = (value: unknown, label: string): string => {
+  const raw = asString(value) ?? '';
+  if (hasTrailingWhitespace(raw)) {
+    fail(`${label} 不合法（${raw}）：路径段不能以点或空格结尾（Windows 会归一化）`);
+  }
+  const filename = requireString(value, label, 200);
+  const issue = filenameIssue(filename);
+  if (issue) fail(`${label} 不合法（${filename}）：${issue}`);
+  return filename;
+};
+
+const requireOverridePath = (value: unknown, label: string): string => {
+  const raw = asString(value) ?? '';
+  if (hasTrailingWhitespace(raw)) {
+    fail(`${label} 不合法（${raw}）：路径段不能以点或空格结尾（Windows 会归一化）`);
+  }
+  const path = requireString(value, label, MAX_PATH);
+  const issue = relativePathIssue(path);
+  if (issue) fail(`${label} 不合法（${path}）：${issue}`);
+  return path;
 };
 
 const parseMod = (value: unknown, index: number): ClientPackMod => {
@@ -140,8 +210,7 @@ const parseMod = (value: unknown, index: number): ClientPackMod => {
   const name = requireString(record.name, `${label}.name`, 100);
   const versionNumber = requireString(record.versionNumber, `${label}.versionNumber`, 64);
 
-  const filename = requireString(record.filename, `${label}.filename`, 200);
-  if (!isSafeFilename(filename)) fail(`${label}.filename 不合法`);
+  const filename = requireFilename(record.filename, `${label}.filename`);
 
   const url = requireString(record.url, `${label}.url`, 500);
   const parsedUrl = (() => {
@@ -183,14 +252,19 @@ const parseOverridesDraft = (
   }
 
   const seen = new Set<string>();
+  const seenCaseInsensitive = new Set<string>();
   let total = 0;
   const parsed = files.map((item, index) => {
     const label = `overrides.files[${index}]`;
     const file = requireRecord(item, label);
-    const path = requireString(file.path, `${label}.path`, MAX_PATH);
-    if (!isSafeRelativePath(path)) fail(`${label}.path 不合法`);
-    if (seen.has(path)) fail(`${label}.path 重复`);
+    const path = requireOverridePath(file.path, `${label}.path`);
+    if (seen.has(path)) fail(`${label}.path 重复: ${path}`);
+    const lowerPath = path.toLowerCase();
+    if (seenCaseInsensitive.has(lowerPath)) {
+      fail(`${label}.path 仅大小写不同而重复: ${path}`);
+    }
     seen.add(path);
+    seenCaseInsensitive.add(lowerPath);
 
     const fileSha256 = requireHex(file.sha256, SHA256_PATTERN, `${label}.sha256`);
     const fileSize = requireInt(file.size, `${label}.size`, 0, MAX_OVERRIDES_BYTES);
@@ -200,7 +274,11 @@ const parseOverridesDraft = (
 
   if (total > MAX_OVERRIDES_BYTES) fail('overrides 解压后总量过大');
 
-  return { sha256, size, files: parsed.sort((left, right) => left.path.localeCompare(right.path)) };
+  return {
+    sha256,
+    size,
+    files: parsed.sort((left, right) => comparePathOrdinals(left.path, right.path)),
+  };
 };
 
 export const parseClientPackDraft = (
@@ -242,20 +320,27 @@ export const parseClientPackDraft = (
     minLauncherValue === undefined
       ? undefined
       : requireString(minLauncherValue, 'minLauncherVersion', 32);
-  if (minLauncherVersion !== undefined && !MIN_LAUNCHER_PATTERN.test(minLauncherVersion)) {
-    fail('minLauncherVersion 不合法');
+  if (minLauncherVersion !== undefined && !SEMVER_PATTERN.test(minLauncherVersion)) {
+    fail('minLauncherVersion 必须是严格 SemVer');
   }
 
-  const modsRaw = asArray(record.mods);
+  if (!Array.isArray(record.mods)) fail('mods 必须是数组');
+  const modsRaw = record.mods;
   if (modsRaw.length > MAX_MODS) fail('mods 数量过多');
   const mods = modsRaw.map((item, index) => parseMod(item, index));
 
   const filenames = new Set<string>();
+  const filenamesCaseInsensitive = new Set<string>();
   const projectIds = new Set<string>();
   for (const mod of mods) {
     if (filenames.has(mod.filename)) fail(`模组文件名重复: ${mod.filename}`);
+    const lowerFilename = mod.filename.toLowerCase();
+    if (filenamesCaseInsensitive.has(lowerFilename)) {
+      fail(`模组文件名仅大小写不同而重复: ${mod.filename}`);
+    }
     if (projectIds.has(mod.projectId)) fail(`模组项目重复: ${mod.projectId}`);
     filenames.add(mod.filename);
+    filenamesCaseInsensitive.add(lowerFilename);
     projectIds.add(mod.projectId);
   }
 
@@ -323,15 +408,19 @@ export const parseStoredClientPack = (value: unknown): ClientPack => {
 export const sha256Hex = (value: Buffer | string): string =>
   createHash('sha256').update(value).digest('hex');
 
-export const packEtag = (raw: string): string => sha256Hex(raw);
+export const packEtag = (raw: Buffer | string): string => sha256Hex(raw);
 
 export const matchesEtag = (header: string, etag: string): boolean =>
   header
     .split(',')
-    .map((part) => part.trim().replace(/^W\//, '').replace(/^"|"$/g, ''))
-    .some((part) => part === etag);
+    .map((part) => part.trim().replace(/^W\//, ''))
+    .some((part) => part === '*' || part.replace(/^"|"$/g, '') === etag);
 
-/** 校验 overrides.zip 与包内逐文件清单完全一致；zip-slip 由 readZipEntries 拒绝。 */
+/**
+ * 校验 overrides.zip 与包内逐文件清单完全一致。
+ * 严格模式拒绝非法/特殊/重复条目，因此 entries.size 就是原始文件条目数，
+ * 不做 Map 去重后的数量比较。
+ */
 export const validateOverridesZip = (
   zip: Buffer,
   overrides: ClientPackDraftOverrides
@@ -341,7 +430,7 @@ export const validateOverridesZip = (
 
   let entries: Map<string, Buffer>;
   try {
-    entries = readZipEntries(zip, OVERRIDES_ZIP_LIMITS);
+    entries = readZipEntries(zip, { ...OVERRIDES_ZIP_LIMITS, strict: true });
   } catch (error) {
     fail(`overrides.zip 不合法：${(error as Error).message}`);
   }
