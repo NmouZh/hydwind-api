@@ -1,12 +1,21 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import type { MiddlewareHandler } from 'hono';
 import { loadConfig } from '../config.ts';
 import { consumeRateLimit } from '../domain/rate-limit.ts';
+import { timingSafeEqualString } from '../domain/timing-safe.ts';
 import { json, readJsonObject } from '../http/api-response.ts';
 import { handle } from '../http/handler.ts';
 import type { ApiContext } from '../http/handler.ts';
 import { sqliteCacheStore } from '../launcher/cache.ts';
 import type { CacheStore } from '../launcher/cache.ts';
+import {
+  MAX_OVERRIDES_BYTES,
+  matchesEtag,
+  packEtag,
+  parseClientPackDraft,
+  validateOverridesZip,
+} from '../launcher/client-pack.ts';
 import {
   BadRequestError,
   ManifestError,
@@ -30,6 +39,7 @@ import {
   listModrinthVersions,
   searchModrinth,
 } from '../launcher/modrinth.ts';
+import { createClientPackStore } from '../launcher/pack-store.ts';
 import {
   buildNormalizedManifest,
   listMinecraftVersions,
@@ -40,8 +50,9 @@ import { ZipError } from '../launcher/zip.ts';
 /**
  * `/api/launcher/*` 路由。
  *
- * 全部是公开 GET（normalize 为 POST），按客户端 IP 限流；上游错误统一
- * JSON 化。路由工厂允许注入 fetch/cache，测试因此不离开进程。
+ * 清单与 Modrinth 等公开接口按客户端 IP 限流；客户端包读取公开并支持
+ * ETag，发布走独立令牌的管理接口（不套读接口限流）。上游错误统一 JSON 化。
+ * 路由工厂允许注入 fetch/cache/存储目录，测试因此不离开进程。
  */
 export interface LauncherRouteOptions {
   fetchImpl?: typeof fetch;
@@ -49,6 +60,12 @@ export interface LauncherRouteOptions {
   now?: () => number;
   defaultMirror?: Mirror;
   modrinthUserAgent?: string;
+  /** 客户端包存储目录；测试注入临时目录，默认取 config.clientPackDir。 */
+  clientPackDir?: string;
+  /** 客户端包发布令牌；未配置时管理接口返回 401。 */
+  launcherAdminToken?: string;
+  /** 管理接口请求体上限，默认 64 MiB。 */
+  maxClientPackBodyBytes?: number;
 }
 
 export const RATE_LIMIT = 120;
@@ -56,6 +73,8 @@ export const RATE_LIMIT_WINDOW_MS = 60_000;
 
 const LOADER_TYPES = new Set<LoaderType>(['vanilla', 'fabric', 'quilt', 'forge', 'neoforge']);
 const NORMALIZE_BODY_LIMIT = 2 * 1024 * 1024;
+const DEFAULT_CLIENT_PACK_BODY_LIMIT = 64 * 1024 * 1024;
+const PACK_VERSION_PATTERN = /^[1-9]\d*$/;
 
 type LauncherHandler = (request: Request, ctx: ApiContext) => Promise<Response>;
 
@@ -75,6 +94,33 @@ const errorResponse = (error: unknown): Response => {
   }
 
   console.error('[hydwind-api] launcher error', error);
+  return json({ error: 'internal_error' }, 500);
+};
+
+/** 客户端包管理令牌只认 Bearer，且必须与 ISSUE_ADMIN_TOKEN 分开配置。 */
+const isLauncherAdmin = (request: Request, expected: string): boolean => {
+  if (!expected) return false;
+  const header = request.headers.get('authorization') ?? '';
+  const bearer = header.toLowerCase().startsWith('bearer ')
+    ? header.slice(7).trim()
+    : '';
+  return bearer.length > 0 && timingSafeEqualString(bearer, expected);
+};
+
+/** 鉴权必须先于 bodyLimit：错误令牌一律 401，不因请求体过大变成 413。 */
+const launcherAdminGuard = (expected: string): MiddlewareHandler =>
+  async (c, next) => {
+    if (!isLauncherAdmin(c.req.raw, expected)) {
+      return json({ error: 'unauthorized' }, 401);
+    }
+    await next();
+  };
+
+const publishErrorResponse = (error: unknown): Response => {
+  if (error instanceof BadRequestError) {
+    return json({ error: 'invalid_request', message: error.message }, 400);
+  }
+  console.error('[hydwind-api] launcher client pack publish error', error);
   return json({ error: 'internal_error' }, 500);
 };
 
@@ -141,6 +187,13 @@ export const createLauncherRoutes = (options: LauncherRouteOptions = {}): Hono =
     defaultMirror: options.defaultMirror ?? config.mirror,
     modrinthUserAgent: options.modrinthUserAgent ?? config.modrinthUserAgent,
   };
+
+  const launcherAdminToken = options.launcherAdminToken ?? config.launcherAdminToken;
+  const maxClientPackBodyBytes =
+    options.maxClientPackBodyBytes ?? DEFAULT_CLIENT_PACK_BODY_LIMIT;
+  const clientPackStore = createClientPackStore({
+    dir: options.clientPackDir ?? config.clientPackDir,
+  });
 
   const versions = createRoute(async () => json(await listMinecraftVersions(deps)));
 
@@ -241,6 +294,109 @@ export const createLauncherRoutes = (options: LauncherRouteOptions = {}): Hono =
     )
   );
 
+  // 客户端包公开读取：原始 pack.json 直接作为响应体，ETag 对原始字节取 SHA-256。
+  const clientPack = createRoute(async (request) => {
+    const stored = await clientPackStore.readCurrent();
+    if (!stored) return json({ error: 'not_found' }, 404);
+
+    const etag = packEtag(stored.raw);
+    const headers = {
+      etag: `"${etag}"`,
+      'cache-control': 'no-cache',
+    };
+    const ifNoneMatch = request.headers.get('if-none-match');
+    if (ifNoneMatch && matchesEtag(ifNoneMatch, etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+
+    return new Response(stored.raw, {
+      status: 200,
+      headers: {
+        ...headers,
+        'content-type': 'application/json; charset=utf-8',
+      },
+    });
+  });
+
+  const clientPackOverrides = createRoute(async (_request, ctx) => {
+    const rawVersion = (ctx.params.packVersion ?? '').trim();
+    if (!PACK_VERSION_PATTERN.test(rawVersion)) {
+      return json({ error: 'not_found' }, 404);
+    }
+    const packVersion = Number(rawVersion);
+    if (!Number.isSafeInteger(packVersion)) {
+      return json({ error: 'not_found' }, 404);
+    }
+
+    const zip = await clientPackStore.readOverrides(packVersion);
+    if (!zip) return json({ error: 'not_found' }, 404);
+
+    return new Response(new Uint8Array(zip), {
+      status: 200,
+      headers: {
+        'content-type': 'application/zip',
+        'content-length': String(zip.length),
+        'cache-control': 'public, max-age=31536000, immutable',
+      },
+    });
+  });
+
+  // 管理接口不套读接口限流：发布是低频运维操作，令牌才是边界。
+  const publishClientPack = handle(async (request) => {
+    try {
+      const contentType = (request.headers.get('content-type') ?? '').toLowerCase();
+      if (!contentType.startsWith('multipart/form-data')) {
+        throw new BadRequestError('Content-Type 必须是 multipart/form-data');
+      }
+
+      let form: FormData;
+      try {
+        form = await request.formData();
+      } catch {
+        throw new BadRequestError('multipart 请求体不合法');
+      }
+
+      const packValue = form.get('pack');
+      if (typeof packValue !== 'string') {
+        throw new BadRequestError('缺少 pack 字段');
+      }
+
+      let packInput: unknown;
+      try {
+        packInput = JSON.parse(packValue);
+      } catch {
+        throw new BadRequestError('pack 不是合法 JSON');
+      }
+      const draft = parseClientPackDraft(packInput);
+
+      let overrides: Buffer | null = null;
+      const overridesValue = form.get('overrides');
+      if (overridesValue !== null) {
+        if (typeof overridesValue === 'string') {
+          throw new BadRequestError('overrides 必须是 zip 文件');
+        }
+        if (overridesValue.size > MAX_OVERRIDES_BYTES) {
+          return json({ error: '请求体太大' }, 413);
+        }
+        overrides = Buffer.from(await overridesValue.arrayBuffer());
+      }
+
+      if (overrides === null && draft.overrides !== undefined) {
+        throw new BadRequestError('没有 overrides 文件，pack 不能包含 overrides');
+      }
+      if (overrides !== null && draft.overrides === undefined) {
+        throw new BadRequestError('上传了 overrides 文件，pack 必须包含 overrides 清单');
+      }
+      if (draft.overrides && overrides) {
+        validateOverridesZip(overrides, draft.overrides);
+      }
+
+      return json(await clientPackStore.publish({ draft, overrides }));
+    } catch (error) {
+      return publishErrorResponse(error);
+    }
+  });
+
   const app = new Hono();
   app.get('/versions', versions);
   app.get('/loaders', loaders);
@@ -257,6 +413,17 @@ export const createLauncherRoutes = (options: LauncherRouteOptions = {}): Hono =
   app.get('/modrinth/project/:idOrSlug/versions', modrinthVersions);
   app.get('/modrinth/project/:idOrSlug', modrinthProject);
   app.get('/modrinth/modpack/:projectId/:versionId', modrinthModpack);
+  app.get('/client', clientPack);
+  app.get('/client/overrides/:packVersion', clientPackOverrides);
+  app.put(
+    '/admin/client-pack',
+    launcherAdminGuard(launcherAdminToken),
+    bodyLimit({
+      maxSize: maxClientPackBodyBytes,
+      onError: (c) => c.json({ error: '请求体太大' }, 413),
+    }),
+    publishClientPack
+  );
 
   return app;
 };

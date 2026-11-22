@@ -15,6 +15,10 @@ export interface AppConfig {
   trustedProxyCidrs: string[];
   mirror: 'official' | 'bmclapi';
   modrinthUserAgent: string;
+  /** 客户端包发布令牌；与 ISSUE_ADMIN_TOKEN 独立，未配置时管理接口一律 401。 */
+  launcherAdminToken: string;
+  /** 客户端包版本化存储目录，默认 <dataDir>/launcher/client-pack。 */
+  clientPackDir: string;
 }
 
 const positiveInt = (value: string | undefined, fallback: number): number => {
@@ -32,12 +36,17 @@ const normalizeOrigin = (value: string): string => value.replace(/\/+$/, '');
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
   const mirror = env.HYDWIND_MIRROR?.trim().toLowerCase() === 'bmclapi' ? 'bmclapi' : 'official';
+  const dataDir = path.resolve(
+    env.HYDWIND_DATA_DIR?.trim() || path.join(process.cwd(), 'data')
+  );
 
   return {
     host: env.HOST?.trim() || '127.0.0.1',
     port: positiveInt(env.PORT, 8787),
     publicOrigin: normalizeOrigin(env.PUBLIC_ORIGIN?.trim() || 'http://localhost:4324'),
-    dataDir: path.resolve(env.HYDWIND_DATA_DIR?.trim() || path.join(process.cwd(), 'data')),
+    dataDir,
+    clientPackDir: path.join(dataDir, 'launcher', 'client-pack'),
+    launcherAdminToken: env.LAUNCHER_ADMIN_TOKEN?.trim() ?? '',
     contentDir: path.resolve(
       env.HYDWIND_CONTENT_DIR?.trim() || path.join(process.cwd(), '..', 'hydwind-web', 'src', 'content')
     ),

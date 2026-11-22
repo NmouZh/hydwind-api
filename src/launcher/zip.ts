@@ -4,8 +4,9 @@ import { inflateRawSync } from 'node:zlib';
  * 最小 ZIP 读取器（只用于 Forge/NeoForge 安装器）。
  *
  * 不新增依赖：读 EOCD → 中央目录 → 本地文件头，只解压需要的 JSON 条目。
- * 安全边界按解压炸弹处理：条目数、单条大小、总大小和压缩比都设上限；
- * 不落盘，因而不存在路径穿越的解压目标，但仍然拒绝 `..` 条目名。
+ * 安全边界按解压炸弹处理：条目数、单条大小、总大小和压缩比都有默认上限，
+ * 调用方可以按用途覆盖（overrides 与安装器的上限不同）；不落盘，因而不
+ * 存在路径穿越的解压目标，但仍然拒绝 `..` 条目名。
  */
 export class ZipError extends Error {
   constructor(message: string) {
@@ -24,6 +25,17 @@ const MAX_TOTAL_UNCOMPRESSED = 64 * 1024 * 1024;
 const MAX_ENTRY_UNCOMPRESSED = 8 * 1024 * 1024;
 const MAX_COMPRESSION_RATIO = 200;
 
+/**
+ * 读取上限。默认值保持安装器现状；overrides 等场景可放宽（总量/单条目
+ * 由调用方自己保证）。
+ */
+export interface ZipReadLimits {
+  maxEntries?: number;
+  maxTotalUncompressed?: number;
+  maxEntryUncompressed?: number;
+  maxCompressionRatio?: number;
+}
+
 const normalizeEntryName = (name: string): string | null => {
   const normalized = name.replace(/\\/g, '/').replace(/^\/+/, '');
   if (!normalized || normalized.endsWith('/')) return null;
@@ -39,7 +51,15 @@ const findEndOfCentralDirectory = (buffer: Buffer): number => {
   throw new ZipError('找不到 ZIP 中央目录');
 };
 
-export const readZipEntries = (input: Buffer | Uint8Array): Map<string, Buffer> => {
+export const readZipEntries = (
+  input: Buffer | Uint8Array,
+  limits: ZipReadLimits = {}
+): Map<string, Buffer> => {
+  const maxEntries = limits.maxEntries ?? MAX_ENTRIES;
+  const maxTotalUncompressed = limits.maxTotalUncompressed ?? MAX_TOTAL_UNCOMPRESSED;
+  const maxEntryUncompressed = limits.maxEntryUncompressed ?? MAX_ENTRY_UNCOMPRESSED;
+  const maxCompressionRatio = limits.maxCompressionRatio ?? MAX_COMPRESSION_RATIO;
+
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input);
   if (buffer.length < EOCD_MIN_SIZE) throw new ZipError('ZIP 文件过小');
 
@@ -48,7 +68,7 @@ export const readZipEntries = (input: Buffer | Uint8Array): Map<string, Buffer> 
   const directorySize = buffer.readUInt32LE(eocd + 12);
   const directoryOffset = buffer.readUInt32LE(eocd + 16);
 
-  if (entryCount > MAX_ENTRIES) throw new ZipError('ZIP 条目过多');
+  if (entryCount > maxEntries) throw new ZipError('ZIP 条目过多');
   if (directoryOffset + directorySize > buffer.length) throw new ZipError('ZIP 中央目录越界');
   if (directoryOffset === 0xffffffff || directorySize === 0xffffffff) {
     throw new ZipError('不支持 ZIP64');
@@ -83,8 +103,8 @@ export const readZipEntries = (input: Buffer | Uint8Array): Map<string, Buffer> 
 
     if (flags & 0x1) throw new ZipError('不支持加密的 ZIP 条目');
     if (method !== 0 && method !== 8) throw new ZipError(`不支持的压缩方法: ${method}`);
-    if (uncompressedSize > MAX_ENTRY_UNCOMPRESSED) throw new ZipError('ZIP 条目过大');
-    if (compressedSize > 0 && uncompressedSize / compressedSize > MAX_COMPRESSION_RATIO) {
+    if (uncompressedSize > maxEntryUncompressed) throw new ZipError('ZIP 条目过大');
+    if (compressedSize > 0 && uncompressedSize / compressedSize > maxCompressionRatio) {
       throw new ZipError('ZIP 压缩比异常');
     }
     if (localOffset + 30 > buffer.length) throw new ZipError('ZIP 本地文件头越界');
@@ -103,7 +123,7 @@ export const readZipEntries = (input: Buffer | Uint8Array): Map<string, Buffer> 
       content = Buffer.from(compressed);
     } else {
       try {
-        content = inflateRawSync(compressed, { maxOutputLength: MAX_ENTRY_UNCOMPRESSED });
+        content = inflateRawSync(compressed, { maxOutputLength: maxEntryUncompressed });
       } catch {
         throw new ZipError(`解压 ZIP 条目失败: ${name}`);
       }
@@ -111,7 +131,7 @@ export const readZipEntries = (input: Buffer | Uint8Array): Map<string, Buffer> 
 
     if (content.length !== uncompressedSize) throw new ZipError(`ZIP 条目大小不匹配: ${name}`);
     totalUncompressed += content.length;
-    if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED) throw new ZipError('ZIP 解压总量过大');
+    if (totalUncompressed > maxTotalUncompressed) throw new ZipError('ZIP 解压总量过大');
 
     if (!entries.has(name)) entries.set(name, content);
   }

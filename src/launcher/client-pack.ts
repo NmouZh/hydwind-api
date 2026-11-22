@@ -3,6 +3,7 @@ import { BadRequestError } from './errors.ts';
 import { asArray, asNumber, asRecord, asString, isValidVersionId } from './manifest.ts';
 import type { LoaderType } from './manifest.ts';
 import { readZipEntries } from './zip.ts';
+import type { ZipReadLimits } from './zip.ts';
 
 /**
  * 服务器权威客户端包。
@@ -69,6 +70,17 @@ const MAX_OVERRIDE_FILES = 2_000;
 export const MAX_OVERRIDES_BYTES = 50 * 1024 * 1024;
 const MAX_NOTES = 500;
 const MAX_PATH = 240;
+
+/**
+ * overrides 合同的 zip 读取上限：单条目与解压总量都放宽到 50 MiB，
+ * 条目数与清单上限一致；文本配置的压缩比可以很高，单独放宽。
+ */
+const OVERRIDES_ZIP_LIMITS: ZipReadLimits = {
+  maxEntries: MAX_OVERRIDE_FILES,
+  maxTotalUncompressed: MAX_OVERRIDES_BYTES,
+  maxEntryUncompressed: MAX_OVERRIDES_BYTES,
+  maxCompressionRatio: 10_000,
+};
 
 const fail = (message: string): never => {
   throw new BadRequestError(message);
@@ -149,8 +161,19 @@ const parseMod = (value: unknown, index: number): ClientPackMod => {
   return { projectId, versionId, name, versionNumber, filename, url, sha512, size };
 };
 
-const parseOverridesDraft = (value: unknown): ClientPackDraftOverrides => {
+/** 解析选项：只有读取已存包时才允许服务端生成字段。 */
+export interface ParseClientPackOptions {
+  allowServerFields?: boolean;
+}
+
+const parseOverridesDraft = (
+  value: unknown,
+  options: ParseClientPackOptions
+): ClientPackDraftOverrides => {
   const record = requireRecord(value, 'overrides');
+  if (!options.allowServerFields && record.url !== undefined) {
+    fail('overrides.url 由服务端生成，pack 输入不能包含');
+  }
   const sha256 = requireHex(record.sha256, SHA256_PATTERN, 'overrides.sha256');
   const size = requireInt(record.size, 'overrides.size', 0, MAX_OVERRIDES_BYTES);
 
@@ -180,8 +203,14 @@ const parseOverridesDraft = (value: unknown): ClientPackDraftOverrides => {
   return { sha256, size, files: parsed.sort((left, right) => left.path.localeCompare(right.path)) };
 };
 
-export const parseClientPackDraft = (value: unknown): ClientPackDraft => {
+export const parseClientPackDraft = (
+  value: unknown,
+  options: ParseClientPackOptions = {}
+): ClientPackDraft => {
   const record = requireRecord(value, 'pack');
+  if (!options.allowServerFields && record.packVersion !== undefined) {
+    fail('packVersion 由服务端生成，pack 输入不能包含');
+  }
   if (record.schemaVersion !== 1) fail('schemaVersion 必须是 1');
   if (record.kind !== 'client-pack') fail('kind 必须是 client-pack');
 
@@ -231,7 +260,9 @@ export const parseClientPackDraft = (value: unknown): ClientPackDraft => {
   }
 
   const overrides =
-    record.overrides === undefined ? undefined : parseOverridesDraft(record.overrides);
+    record.overrides === undefined
+      ? undefined
+      : parseOverridesDraft(record.overrides, options);
 
   return {
     schemaVersion: 1,
@@ -250,17 +281,32 @@ export const parseClientPackDraft = (value: unknown): ClientPackDraft => {
 export const clientPackOverridesUrl = (packVersion: number): string =>
   `/api/launcher/client/overrides/${packVersion}`;
 
+/** 补上服务端字段并固定 JSON 键顺序，保证落盘字节稳定、便于人工审阅。 */
 export const finalizeClientPack = (draft: ClientPackDraft, packVersion: number): ClientPack => ({
-  ...draft,
+  schemaVersion: draft.schemaVersion,
+  kind: draft.kind,
   packVersion,
+  createdAt: draft.createdAt,
+  notes: draft.notes,
+  gameVersion: draft.gameVersion,
+  loader: draft.loader,
+  java: draft.java,
+  minLauncherVersion: draft.minLauncherVersion,
+  mods: draft.mods,
   overrides: draft.overrides
-    ? { ...draft.overrides, url: clientPackOverridesUrl(packVersion) }
+    ? {
+        url: clientPackOverridesUrl(packVersion),
+        sha256: draft.overrides.sha256,
+        size: draft.overrides.size,
+        files: draft.overrides.files,
+      }
     : undefined,
 });
 
+/** 读取已存包：允许 packVersion / overrides.url，未知字段直接忽略（阶段 D 预留）。 */
 export const parseStoredClientPack = (value: unknown): ClientPack => {
   const record = requireRecord(value, 'pack');
-  const draft = parseClientPackDraft(record);
+  const draft = parseClientPackDraft(record, { allowServerFields: true });
   const packVersion = requireInt(record.packVersion, 'packVersion', 1, Number.MAX_SAFE_INTEGER);
 
   if (draft.overrides) {
@@ -295,7 +341,7 @@ export const validateOverridesZip = (
 
   let entries: Map<string, Buffer>;
   try {
-    entries = readZipEntries(zip);
+    entries = readZipEntries(zip, OVERRIDES_ZIP_LIMITS);
   } catch (error) {
     fail(`overrides.zip 不合法：${(error as Error).message}`);
   }

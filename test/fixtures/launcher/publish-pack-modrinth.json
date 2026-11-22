@@ -1,0 +1,607 @@
+{
+  "projects": {
+    "sodium": {
+      "id": "AANobbMI",
+      "slug": "sodium",
+      "title": "Sodium",
+      "client_side": "required"
+    },
+    "iris": {
+      "id": "YL57xq9U",
+      "slug": "iris",
+      "title": "Iris Shaders",
+      "client_side": "required"
+    },
+    "lithium": {
+      "id": "gvQqBUqZ",
+      "slug": "lithium",
+      "title": "Lithium",
+      "client_side": "required"
+    },
+    "indium": {
+      "id": "InDiUm01",
+      "slug": "indium",
+      "title": "Indium",
+      "client_side": "required"
+    },
+    "serveronly": {
+      "id": "SrvOnly01",
+      "slug": "serveronly",
+      "title": "Server Only",
+      "client_side": "unsupported"
+    },
+    "oculus": {
+      "id": "OcUlus01",
+      "slug": "oculus",
+      "title": "Oculus",
+      "client_side": "required"
+    },
+    "cyc-a": {
+      "id": "CycA0001",
+      "slug": "cyc-a",
+      "title": "Cycle A",
+      "client_side": "required"
+    },
+    "cyc-b": {
+      "id": "CycB0002",
+      "slug": "cyc-b",
+      "title": "Cycle B",
+      "client_side": "required"
+    }
+  },
+  "versions": {
+    "AANobbMI": [
+      {
+        "id": "sod-100",
+        "project_id": "AANobbMI",
+        "name": "Sodium 0.5.0",
+        "version_number": "0.5.0",
+        "version_type": "release",
+        "date_published": "2026-09-01T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric",
+          "quilt"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"
+            },
+            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sod-100/sodium-0.5.0.jar",
+            "filename": "sodium-0.5.0.jar",
+            "primary": true,
+            "size": 1000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "sod-200",
+        "project_id": "AANobbMI",
+        "name": "Sodium 0.6.1",
+        "version_number": "0.6.1",
+        "version_type": "release",
+        "date_published": "2026-11-01T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric",
+          "quilt"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"
+            },
+            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sod-200/sodium-0.6.1.jar",
+            "filename": "sodium-0.6.1.jar",
+            "primary": true,
+            "size": 2000
+          }
+        ],
+        "dependencies": [
+          {
+            "project_id": "InDiUm01",
+            "dependency_type": "required"
+          }
+        ]
+      },
+      {
+        "id": "sod-beta",
+        "project_id": "AANobbMI",
+        "name": "Sodium 0.7.0 beta",
+        "version_number": "0.7.0-beta.1",
+        "version_type": "beta",
+        "date_published": "2026-11-10T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333"
+            },
+            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sod-beta/sodium-0.7.0-beta.1.jar",
+            "filename": "sodium-0.7.0-beta.1.jar",
+            "primary": true,
+            "size": 3000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "sod-alpha",
+        "project_id": "AANobbMI",
+        "name": "Sodium 0.7.0 alpha",
+        "version_number": "0.7.0-alpha.1",
+        "version_type": "alpha",
+        "date_published": "2026-11-12T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444"
+            },
+            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sod-alpha/sodium-0.7.0-alpha.1.jar",
+            "filename": "sodium-0.7.0-alpha.1.jar",
+            "primary": true,
+            "size": 4000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "sod-forge",
+        "project_id": "AANobbMI",
+        "name": "Sodium Forge 0.6.1",
+        "version_number": "0.6.1-forge",
+        "version_type": "release",
+        "date_published": "2026-11-15T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "forge"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555"
+            },
+            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sod-forge/sodium-forge-0.6.1.jar",
+            "filename": "sodium-forge-0.6.1.jar",
+            "primary": true,
+            "size": 5000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "sod-old",
+        "project_id": "AANobbMI",
+        "name": "Sodium 0.5.0 for 1.21.1",
+        "version_number": "0.5.0-mc1.21.1",
+        "version_type": "release",
+        "date_published": "2026-11-20T00:00:00Z",
+        "game_versions": [
+          "1.21.1"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "66666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+            },
+            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sod-old/sodium-1.21.1-0.5.0.jar",
+            "filename": "sodium-1.21.1-0.5.0.jar",
+            "primary": true,
+            "size": 6000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "sod-fabriconly",
+        "project_id": "AANobbMI",
+        "name": "Sodium 0.5.5 Fabric",
+        "version_number": "0.5.5-fabric",
+        "version_type": "release",
+        "date_published": "2026-10-05T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "77777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777"
+            },
+            "url": "https://cdn.modrinth.com/data/AANobbMI/versions/sod-fabriconly/sodium-fabric-0.5.5.jar",
+            "filename": "sodium-fabric-0.5.5.jar",
+            "primary": true,
+            "size": 7000
+          }
+        ],
+        "dependencies": []
+      }
+    ],
+    "YL57xq9U": [
+      {
+        "id": "iris-200",
+        "project_id": "YL57xq9U",
+        "name": "Iris 1.8.0",
+        "version_number": "1.8.0",
+        "version_type": "release",
+        "date_published": "2026-10-01T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "88888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888"
+            },
+            "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-200/iris-1.8.0.jar",
+            "filename": "iris-1.8.0.jar",
+            "primary": true,
+            "size": 8000
+          }
+        ],
+        "dependencies": [
+          {
+            "project_id": "AANobbMI",
+            "dependency_type": "required"
+          },
+          {
+            "project_id": "SrvOnly01",
+            "version_id": "srv-100",
+            "dependency_type": "required"
+          },
+          {
+            "project_id": "gvQqBUqZ",
+            "version_id": "lit-100",
+            "dependency_type": "required"
+          },
+          {
+            "project_id": "OcUlus01",
+            "version_id": "ocu-100",
+            "dependency_type": "optional"
+          }
+        ]
+      },
+      {
+        "id": "iris-beta",
+        "project_id": "YL57xq9U",
+        "name": "Iris 1.9.0 beta",
+        "version_number": "1.9.0-beta.1",
+        "version_type": "beta",
+        "date_published": "2026-11-11T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+            },
+            "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-beta/iris-1.9.0-beta.1.jar",
+            "filename": "iris-1.9.0-beta.1.jar",
+            "primary": true,
+            "size": 9000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "iris-forge",
+        "project_id": "YL57xq9U",
+        "name": "Iris Forge 1.8.0",
+        "version_number": "1.8.0-forge",
+        "version_type": "release",
+        "date_published": "2026-11-02T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "forge"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-forge/iris-forge-1.8.0.jar",
+            "filename": "iris-forge-1.8.0.jar",
+            "primary": true,
+            "size": 10000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "iris-old",
+        "project_id": "YL57xq9U",
+        "name": "Iris 1.7.0 for 1.21.1",
+        "version_number": "1.7.0-mc1.21.1",
+        "version_type": "release",
+        "date_published": "2026-11-12T00:00:00Z",
+        "game_versions": [
+          "1.21.1"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/iris-old/iris-1.21.1-1.7.0.jar",
+            "filename": "iris-1.21.1-1.7.0.jar",
+            "primary": true,
+            "size": 11000
+          }
+        ],
+        "dependencies": []
+      }
+    ],
+    "gvQqBUqZ": [
+      {
+        "id": "lit-100",
+        "project_id": "gvQqBUqZ",
+        "name": "Lithium 0.5.0",
+        "version_number": "0.5.0",
+        "version_type": "release",
+        "date_published": "2026-09-10T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric",
+          "quilt"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "url": "https://cdn.modrinth.com/data/gvQqBUqZ/versions/lit-100/lithium-0.5.0.jar",
+            "filename": "lithium-0.5.0.jar",
+            "primary": true,
+            "size": 12000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "lit-200",
+        "project_id": "gvQqBUqZ",
+        "name": "Lithium 0.6.0",
+        "version_number": "0.6.0",
+        "version_type": "release",
+        "date_published": "2026-10-10T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric",
+          "quilt"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "url": "https://cdn.modrinth.com/data/gvQqBUqZ/versions/lit-200/lithium-0.6.0.jar",
+            "filename": "lithium-0.6.0.jar",
+            "primary": true,
+            "size": 13000
+          }
+        ],
+        "dependencies": []
+      },
+      {
+        "id": "lit-old",
+        "project_id": "gvQqBUqZ",
+        "name": "Lithium 0.4.0 for 1.21.1",
+        "version_number": "0.4.0-mc1.21.1",
+        "version_type": "release",
+        "date_published": "2026-04-01T00:00:00Z",
+        "game_versions": [
+          "1.21.1"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "url": "https://cdn.modrinth.com/data/gvQqBUqZ/versions/lit-old/lithium-1.21.1-0.4.0.jar",
+            "filename": "lithium-1.21.1-0.4.0.jar",
+            "primary": true,
+            "size": 9000
+          }
+        ],
+        "dependencies": []
+      }
+    ],
+    "InDiUm01": [
+      {
+        "id": "ind-100",
+        "project_id": "InDiUm01",
+        "name": "Indium 1.0.0",
+        "version_number": "1.0.0",
+        "version_type": "release",
+        "date_published": "2026-08-01T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric",
+          "quilt"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            },
+            "url": "https://cdn.modrinth.com/data/InDiUm01/versions/ind-100/indium-1.0.0.jar",
+            "filename": "indium-1.0.0.jar",
+            "primary": true,
+            "size": 14000
+          }
+        ],
+        "dependencies": []
+      }
+    ],
+    "SrvOnly01": [
+      {
+        "id": "srv-100",
+        "project_id": "SrvOnly01",
+        "name": "Server Only 1.0.0",
+        "version_number": "1.0.0",
+        "version_type": "release",
+        "date_published": "2026-07-01T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            "url": "https://cdn.modrinth.com/data/SrvOnly01/versions/srv-100/serveronly-1.0.0.jar",
+            "filename": "serveronly-1.0.0.jar",
+            "primary": true,
+            "size": 15000
+          }
+        ],
+        "dependencies": []
+      }
+    ],
+    "OcUlus01": [
+      {
+        "id": "ocu-100",
+        "project_id": "OcUlus01",
+        "name": "Oculus 1.8.0",
+        "version_number": "1.8.0",
+        "version_type": "release",
+        "date_published": "2026-06-01T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric",
+          "quilt"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "url": "https://cdn.modrinth.com/data/OcUlus01/versions/ocu-100/oculus-1.8.0.jar",
+            "filename": "oculus-1.8.0.jar",
+            "primary": true,
+            "size": 16000
+          }
+        ],
+        "dependencies": []
+      }
+    ],
+    "CycA0001": [
+      {
+        "id": "cyc-a1",
+        "project_id": "CycA0001",
+        "name": "Cycle A 1.0.0",
+        "version_number": "1.0.0",
+        "version_type": "release",
+        "date_published": "2026-05-01T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            },
+            "url": "https://cdn.modrinth.com/data/CycA0001/versions/cyc-a1/cycle-a-1.0.0.jar",
+            "filename": "cycle-a-1.0.0.jar",
+            "primary": true,
+            "size": 17000
+          }
+        ],
+        "dependencies": [
+          {
+            "project_id": "CycB0002",
+            "version_id": "cyc-b1",
+            "dependency_type": "required"
+          }
+        ]
+      }
+    ],
+    "CycB0002": [
+      {
+        "id": "cyc-b1",
+        "project_id": "CycB0002",
+        "name": "Cycle B 1.0.0",
+        "version_number": "1.0.0",
+        "version_type": "release",
+        "date_published": "2026-05-02T00:00:00Z",
+        "game_versions": [
+          "26.3"
+        ],
+        "loaders": [
+          "fabric"
+        ],
+        "files": [
+          {
+            "hashes": {
+              "sha512": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            },
+            "url": "https://cdn.modrinth.com/data/CycB0002/versions/cyc-b1/cycle-b-1.0.0.jar",
+            "filename": "cycle-b-1.0.0.jar",
+            "primary": true,
+            "size": 18000
+          }
+        ],
+        "dependencies": [
+          {
+            "project_id": "CycA0001",
+            "version_id": "cyc-a1",
+            "dependency_type": "required"
+          }
+        ]
+      }
+    ]
+  }
+}

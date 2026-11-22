@@ -1,0 +1,8 @@
+{
+  "notes": "P5 发布脚本测试包",
+  "gameVersion": "26.3",
+  "loader": { "type": "fabric", "version": "0.20.1" },
+  "java": { "major": 25, "component": "java-runtime-epsilon" },
+  "minLauncherVersion": "0.5.0",
+  "mods": ["sodium", { "project": "iris" }]
+}

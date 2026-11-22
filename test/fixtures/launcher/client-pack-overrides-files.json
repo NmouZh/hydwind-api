@@ -1,0 +1,12 @@
+{
+  "files": [
+    {
+      "path": "config/foo.toml",
+      "content": "enabled = true\n"
+    },
+    {
+      "path": "config/mod/config.json",
+      "content": "{\n  \"key\": \"value\"\n}\n"
+    }
+  ]
+}
