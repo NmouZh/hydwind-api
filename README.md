@@ -17,7 +17,7 @@ node --env-file=.env src/server.ts
 # http://127.0.0.1:8787/api/health
 ```
 
-发布客户端包前，在 `.env` 中额外设置 `LAUNCHER_ADMIN_TOKEN`（`.env.example` 尚未列出该项，需手动补一行）。未配置时管理接口一律返回 401，读接口不受影响。
+发布客户端包前，在 `.env` 中额外设置 `LAUNCHER_ADMIN_TOKEN`（`.env.example` 已列出占位值，部署时换成独立随机令牌）。未配置时管理接口一律返回 401，读接口不受影响。
 
 `hydwind-web` 通过 `HYDWIND_API_ORIGIN`（默认 `http://127.0.0.1:8787`）访问本服务；启动器的设置页填写同一个地址。
 
@@ -181,7 +181,7 @@ npm run smoke
 ## 已知限制
 
 - 尚无部署配置；生产部署方式待定。`LAUNCHER_ADMIN_TOKEN` 需要在部署环境单独配置，不能复用 `ISSUE_ADMIN_TOKEN`。
-- `.env.example` 尚未列出 `LAUNCHER_ADMIN_TOKEN`，首次使用发布脚本前需手动添加。
+- `.env.example` 里的 `LAUNCHER_ADMIN_TOKEN` 只是占位值，部署时必须替换为独立随机令牌。
 - 客户端包目前只支持 Modrinth 来源；CurseForge 与其它来源不在范围内。
 - 服务端校验客户端 mod 列表（阶段 D）尚未实现；包格式已保留可选字段槽位。
 - 路径与文件名规则按 UTF-16 码元与大小写不敏感比较，未做 Unicode NFC 归一化；跨平台边界见 `src/launcher/client-pack.ts` 的注释与测试。
